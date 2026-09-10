@@ -27,6 +27,16 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Billboard
+    second: {fileID: 2100000, guid: 3a4243489d1e74b1184ba8add1300443, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Billboard2
+    second: {fileID: 2100000, guid: 3833d7e78a03b4ccfb962f3ed9461dcf, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Botol Cat
     second: {fileID: 2100000, guid: 80356dcc2d72a4ea1b3dca9163c0a69f, type: 2}
   - first:
