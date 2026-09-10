@@ -17,6 +17,11 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: BIBIT
+    second: {fileID: 2100000, guid: 067440be1a9ba4061bf7b7265a18b992, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Beton
     second: {fileID: 2100000, guid: 54d88641d87f2467488c1ee8b7ca4708, type: 2}
   - first:
@@ -27,6 +32,11 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Botol Cat.001
+    second: {fileID: 2100000, guid: 61ff9e031f355413996b6067c6fb492c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Galon
     second: {fileID: 2100000, guid: 704426952ae254df28981762aeebbe57, type: 2}
   - first:
@@ -34,6 +44,16 @@ ModelImporter:
       assembly: UnityEngine.CoreModule
       name: Gayung
     second: {fileID: 2100000, guid: 4f80644c68f7d42d3975d39835d40b36, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Pipa
+    second: {fileID: 2100000, guid: 9838e204ce8144989a953780cdaa4290, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Pipa.001
+    second: {fileID: 2100000, guid: 9ef7362a16dc94b098d38779160782f7, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
