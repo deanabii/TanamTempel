@@ -57,6 +57,16 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Kayu
+    second: {fileID: 2100000, guid: eb3d710bda1295648871f27d9e9b2a02, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: PintuJendela
+    second: {fileID: 2100000, guid: 36a8d039cbd320f408a8ed3fbe7d76bd, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Pipa
     second: {fileID: 2100000, guid: 9838e204ce8144989a953780cdaa4290, type: 2}
   - first:
@@ -64,6 +74,11 @@ ModelImporter:
       assembly: UnityEngine.CoreModule
       name: Pipa.001
     second: {fileID: 2100000, guid: 9ef7362a16dc94b098d38779160782f7, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Rumah01
+    second: {fileID: 2100000, guid: c851d3474d7ab52488a7094caccefd33, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
