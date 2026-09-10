@@ -2,6 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Komponen sederhana (MVP) untuk objek yang bisa diambil.
+/// Menjaga ukuran (scale) asli objek agar tidak berubah saat dipindahkan antar parent.
 /// </summary>
 public class Grabbable : MonoBehaviour
 {
@@ -12,11 +13,15 @@ public class Grabbable : MonoBehaviour
 
     private Rigidbody _rb;
     private Camera _mainCam;
+    private Vector3 _originalLocalScale;
 
     private void Awake()
     {
         _rb = GetComponent<Rigidbody>();
         _mainCam = Camera.main;
+
+        // Simpan ukuran lokal asli objek sejak awal
+        _originalLocalScale = transform.localScale;
 
         // Cari otomatis jika belum di-drag ke Inspector
         if (indicator == null)
@@ -59,20 +64,32 @@ public class Grabbable : MonoBehaviour
             _rb.detectCollisions = false;
         }
 
+        // Lepas dulu dari parent sebelumnya ke root dan pulihkan ukuran asli
+        transform.SetParent(null);
+        transform.localScale = _originalLocalScale;
+
+        // Pindahkan ke tangan dan jaga ukuran asli
         transform.SetParent(hand);
         transform.localPosition = Vector3.zero;
         transform.localRotation = Quaternion.identity;
+        transform.localScale = _originalLocalScale;
     }
 
     public void Drop()
     {
         isGrabbed = false;
         transform.SetParent(null);
+        transform.localScale = _originalLocalScale;
 
         if (_rb != null)
         {
             _rb.isKinematic = false;
             _rb.detectCollisions = true;
         }
+    }
+
+    public Vector3 GetOriginalScale()
+    {
+        return _originalLocalScale;
     }
 }

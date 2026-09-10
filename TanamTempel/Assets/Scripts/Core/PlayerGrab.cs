@@ -91,10 +91,11 @@ public class PlayerGrab : MonoBehaviour
             {
                 lookingAtGrid = true;
                 WallGrid wallGrid = hit.collider.GetComponentInParent<WallGrid>();
+                float colliderOffset = pot.GetColliderOffset();
 
                 Vector3 placePos = wallGrid != null
-                    ? wallGrid.GetPlacementPosition(hit.point, hit.normal)
-                    : hit.point;
+                    ? wallGrid.GetPlacementPosition(hit.point, hit.normal, colliderOffset)
+                    : hit.point + hit.normal * colliderOffset;
 
                 Quaternion placeRot = Quaternion.LookRotation(hit.normal);
 
