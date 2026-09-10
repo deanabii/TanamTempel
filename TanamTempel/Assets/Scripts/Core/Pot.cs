@@ -2,9 +2,8 @@ using UnityEngine;
 
 /// <summary>
 /// Komponen untuk objek ber-tag 'Pot'.
-/// Mengatur tampilan ghost object di dinding Grid dan penempatan pot ke dinding.
-/// Menempatkan pot dengan cara menyamakannya ke transform ghost terlebih dahulu,
-/// baru kemudian mengubah parent ke grid agar ukuran/scale tidak berubah.
+/// Mengatur penempatan pot ke dinding Grid dan penanaman Biji.
+/// Proses 4 stage pertumbuhan ditangani oleh komponen terpisah 'PlantGrowth.cs'.
 /// </summary>
 [RequireComponent(typeof(Grabbable))]
 public class Pot : MonoBehaviour
@@ -19,13 +18,28 @@ public class Pot : MonoBehaviour
     [Tooltip("Rotasi tambahan jika model pot perlu diputar saat menempel di dinding (Euler).")]
     public Vector3 wallRotationOffset = Vector3.zero;
 
+    [Tooltip("Jarak dorong keluar dari dinding (meter).")]
+    public float wallOffset = 0.5f;
+
+    [Header("Tanam / Planting")]
+    [Tooltip("Anak objek yang memiliki SpriteRenderer khusus untuk tulisan/ikon indikator Tanam (berbeda dari indikator Grab)")]
+    public GameObject plantIndicator;
+
+    [Tooltip("Komponen PlantGrowth yang mengatur 4 stage pertumbuhan tanaman. Jika dikosongkan, otomatis mencari di objek/anak objek.")]
+    public PlantGrowth plantGrowth;
+
+    [Tooltip("Status apakah pot sudah ditanami")]
+    public bool isPlanted = false;
+
     [HideInInspector] public GameObject ghostInstance;
     private Grabbable _grabbable;
     private Vector3 _originalLocalScale;
+    private Camera _mainCam;
 
     private void Awake()
     {
         _grabbable = GetComponent<Grabbable>();
+        _mainCam = Camera.main;
 
         // Simpan ukuran lokal asli objek sejak awal
         _originalLocalScale = transform.localScale;
@@ -34,28 +48,76 @@ public class Pot : MonoBehaviour
         {
             try { gameObject.tag = "Pot"; } catch { }
         }
+
+        // Cari otomatis komponen PlantGrowth jika belum di-assign
+        if (plantGrowth == null)
+        {
+            plantGrowth = GetComponentInChildren<PlantGrowth>();
+        }
+
+        // Pastikan indikator tanam mati di awal
+        SetPlantIndicator(false);
+    }
+
+    private void Start()
+    {
+        // Pastikan kembali indikator tanam mati saat permainan dimulai
+        SetPlantIndicator(false);
+    }
+
+    private void OnDisable()
+    {
+        SetPlantIndicator(false);
+    }
+
+    private void LateUpdate()
+    {
+        // Pastikan indikator tanam selalu mati jika sudah ditanami
+        if (isPlanted && plantIndicator != null && plantIndicator.activeSelf)
+        {
+            plantIndicator.SetActive(false);
+        }
+
+        // Billboard effect: buat indikator tanam selalu menghadap ke kamera
+        if (plantIndicator != null && plantIndicator.activeSelf && _mainCam != null)
+        {
+            plantIndicator.transform.forward = _mainCam.transform.forward;
+        }
     }
 
     /// <summary>
-    /// Mengambil jarak dari pusat objek ke tepi luar Collider secara otomatis
-    /// berdasarkan ukuran asli objek.
+    /// Menanam benih ke dalam pot dan memicu siklus pertumbuhan pada PlantGrowth sesuai data benih.
+    /// </summary>
+    public void Plant(PlantData data = null)
+    {
+        isPlanted = true;
+        SetPlantIndicator(false);
+
+        // Mulai siklus pertumbuhan tanaman dengan data benih
+        if (plantGrowth != null)
+        {
+            plantGrowth.StartGrowth(data);
+        }
+    }
+
+    /// <summary>
+    /// Menampilkan atau menyembunyikan indikator 'Tanam' di atas pot.
+    /// </summary>
+    public void SetPlantIndicator(bool show)
+    {
+        if (plantIndicator != null)
+        {
+            // Hanya menyala jika diminta (show == true) DAN belum ditanami (!isPlanted)
+            plantIndicator.SetActive(show && !isPlanted);
+        }
+    }
+
+    /// <summary>
+    /// Mengambil jarak dari pusat objek ke tepi luar Collider.
     /// </summary>
     public float GetColliderOffset()
     {
-        Collider col = GetComponentInChildren<Collider>();
-        if (col != null)
-        {
-            if (col is BoxCollider box)
-            {
-                float halfX = box.size.x * Mathf.Abs(_originalLocalScale.x) * 0.5f;
-                float halfZ = box.size.z * Mathf.Abs(_originalLocalScale.z) * 0.5f;
-                return Mathf.Max(halfX, halfZ);
-            }
-
-            return Mathf.Max(col.bounds.extents.x, col.bounds.extents.z);
-        }
-
-        return 0.5f;
+        return wallOffset;
     }
 
     /// <summary>
@@ -154,6 +216,14 @@ public class Pot : MonoBehaviour
             // Pastikan ghost tidak punya parent dan ukurannya sama persis dengan pot asli
             ghostInstance.transform.SetParent(null);
             ghostInstance.transform.localScale = _originalLocalScale;
+
+            // Matikan dan buang PlantGrowth pada ghost agar tidak ikut tumbuh
+            PlantGrowth ghostGrowth = ghostInstance.GetComponentInChildren<PlantGrowth>();
+            if (ghostGrowth != null)
+            {
+                ghostGrowth.SetStage(GrowthStage.None);
+                Destroy(ghostGrowth);
+            }
 
             // Hapus script logika dan komponen fisika dari ghost
             Destroy(ghostInstance.GetComponent<Pot>());

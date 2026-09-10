@@ -6,7 +6,8 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// Komponen pengendali Grab sederhana (MVP).
 /// Mendeteksi objek dengan lebar raycast yang bisa diatur, memunculkan indikator di atas objek,
-/// memindahkan ke tangan, serta menempatkan Pot ke dinding ber-tag 'Grid' dengan Ghost preview.
+/// memindahkan ke tangan, menempatkan Pot ke dinding ber-tag 'Grid' dengan Ghost preview,
+/// serta menanam Biji ke dalam Pot dengan indikator 'Tanam'.
 /// </summary>
 public class PlayerGrab : MonoBehaviour
 {
@@ -17,12 +18,13 @@ public class PlayerGrab : MonoBehaviour
 
     [Header("Pengaturan Deteksi")]
     public float grabDistance = 3.0f;
-    [Tooltip("Lebar / radius area raycast (0 = garis tipis, > 0 = lebih tebal/mudah dibidik)")]
+    [Tooltip("Lebar / radius area raycast untuk mengambil barang (0 = garis tipis, > 0 = lebih tebal/mudah dibidik)")]
     public float raycastRadius = 0.3f;
     public LayerMask grabLayer = ~0;
 
     private Grabbable _currentTarget;
     private Grabbable _heldItem;
+    private Pot _currentHoveredPotForPlanting;
 
     private void Start()
     {
@@ -34,18 +36,31 @@ public class PlayerGrab : MonoBehaviour
 
     private void Update()
     {
-        // 1. Jika sedang memegang sesuatu
+        // 1. Jika sedang memegang sesuatu di tangan
         if (_heldItem != null)
         {
-            // Cek apakah memegang Pot
+            // Pastikan target grab biasa dinonaktifkan saat tangan memegang barang
+            ClearGrabTarget();
+
+            // A. Cek apakah memegang Pot (untuk ditempel ke dinding Grid)
             Pot heldPot = _heldItem.GetComponent<Pot>();
             if (heldPot != null)
             {
+                ClearPlantingTarget();
                 CheckGridPlacement(heldPot);
                 return;
             }
 
-            // Jika barang biasa dan tombol ditekan -> Drop
+            // B. Cek apakah memegang Biji (untuk ditanam ke dalam Pot)
+            Biji heldBiji = _heldItem.GetComponent<Biji>();
+            if (heldBiji != null || _heldItem.CompareTag("Biji"))
+            {
+                CheckSeedPlanting(heldBiji);
+                return;
+            }
+
+            // C. Jika barang biasa dan tombol ditekan -> Drop
+            ClearPlantingTarget();
             if (IsInputTriggered())
             {
                 _heldItem.Drop();
@@ -53,6 +68,9 @@ public class PlayerGrab : MonoBehaviour
             }
             return;
         }
+
+        // Jika tangan kosong, pastikan indikator tanam mati
+        ClearPlantingTarget();
 
         // 2. Jika tangan kosong, cari objek di depan
         CheckLookAt();
@@ -70,6 +88,100 @@ public class PlayerGrab : MonoBehaviour
             {
                 Debug.LogWarning("Hand Point belum diisi di Inspector!");
             }
+        }
+    }
+
+    /// <summary>
+    /// Menangani deteksi pot saat memegang Biji dan melakukan penanaman.
+    /// Menggunakan Raycast presisi agar indikator Tanam seketika mati saat pandangan beralih dari pot.
+    /// </summary>
+    private void CheckSeedPlanting(Biji biji)
+    {
+        if (playerCamera == null) return;
+
+        Ray ray = new Ray(playerCamera.position, playerCamera.forward);
+        RaycastHit hit;
+        Pot targetPot = null;
+
+        // Gunakan Raycast lurus presisi agar membidik pot tepat di tengah pandangan
+        if (Physics.Raycast(ray, out hit, grabDistance, grabLayer))
+        {
+            Pot foundPot = hit.collider.GetComponentInParent<Pot>();
+            if (foundPot != null && !foundPot.isPlanted)
+            {
+                targetPot = foundPot;
+            }
+        }
+
+        // Jika target pot berubah dari frame sebelumnya
+        if (_currentHoveredPotForPlanting != targetPot)
+        {
+            // Matikan indikator pot sebelumnya saat pandangan beralih
+            if (_currentHoveredPotForPlanting != null)
+            {
+                _currentHoveredPotForPlanting.SetPlantIndicator(false);
+            }
+
+            _currentHoveredPotForPlanting = targetPot;
+
+            // Nyalakan indikator pot baru jika sedang melihat pot
+            if (_currentHoveredPotForPlanting != null)
+            {
+                _currentHoveredPotForPlanting.SetPlantIndicator(true);
+            }
+        }
+
+        // Jika sedang membidik pot dan tombol ditekan -> Tanam biji!
+        if (_currentHoveredPotForPlanting != null)
+        {
+            if (IsInputTriggered())
+            {
+                Pot potToPlant = _currentHoveredPotForPlanting;
+                _currentHoveredPotForPlanting = null;
+
+                // Ambil data tanaman dari biji yang sedang dipegang
+                PlantData plantData = biji != null ? biji.plantData : null;
+                potToPlant.Plant(plantData);
+
+                // Hilangkan biji yang dipegang
+                if (biji != null)
+                {
+                    biji.Consume();
+                }
+                else
+                {
+                    Destroy(_heldItem.gameObject);
+                }
+
+                _heldItem = null;
+            }
+        }
+        else
+        {
+            // Jika tidak melihat pot dan tombol ditekan -> Drop biji ke lantai
+            if (IsInputTriggered())
+            {
+                _heldItem.Drop();
+                _heldItem = null;
+            }
+        }
+    }
+
+    private void ClearPlantingTarget()
+    {
+        if (_currentHoveredPotForPlanting != null)
+        {
+            _currentHoveredPotForPlanting.SetPlantIndicator(false);
+            _currentHoveredPotForPlanting = null;
+        }
+    }
+
+    private void ClearGrabTarget()
+    {
+        if (_currentTarget != null)
+        {
+            _currentTarget.SetIndicator(false);
+            _currentTarget = null;
         }
     }
 
@@ -152,11 +264,7 @@ public class PlayerGrab : MonoBehaviour
         }
 
         // Jika tidak melihat objek grabbable
-        if (_currentTarget != null)
-        {
-            _currentTarget.SetIndicator(false);
-            _currentTarget = null;
-        }
+        ClearGrabTarget();
     }
 
     private bool IsInputTriggered()

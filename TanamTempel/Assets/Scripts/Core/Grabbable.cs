@@ -6,7 +6,7 @@ using UnityEngine;
 /// </summary>
 public class Grabbable : MonoBehaviour
 {
-    [Tooltip("Anak objek yang memiliki SpriteRenderer untuk tulisan/ikon indikator")]
+    [Tooltip("Anak objek yang memiliki SpriteRenderer untuk tulisan/ikon indikator Grab")]
     public GameObject indicator;
 
     [HideInInspector] public bool isGrabbed = false;
@@ -23,13 +23,18 @@ public class Grabbable : MonoBehaviour
         // Simpan ukuran lokal asli objek sejak awal
         _originalLocalScale = transform.localScale;
 
-        // Cari otomatis jika belum di-drag ke Inspector
+        // Cari otomatis jika belum di-drag ke Inspector (abaikan anak objek indikator tanam)
         if (indicator == null)
         {
-            SpriteRenderer sr = GetComponentInChildren<SpriteRenderer>(true);
-            if (sr != null && sr.gameObject != gameObject)
+            SpriteRenderer[] srs = GetComponentsInChildren<SpriteRenderer>(true);
+            foreach (var sr in srs)
             {
-                indicator = sr.gameObject;
+                string lower = sr.gameObject.name.ToLower();
+                if (sr.gameObject != gameObject && !lower.Contains("plant") && !lower.Contains("tanam"))
+                {
+                    indicator = sr.gameObject;
+                    break;
+                }
             }
         }
 
