@@ -1,20 +1,21 @@
 using UnityEngine;
 
 /// <summary>
-/// 4 Tahapan Pertumbuhan Tanaman.
+/// Enum legacy tahapan pertumbuhan untuk backward-compatibility.
 /// </summary>
 public enum GrowthStage
 {
-    None,       // Belum ditanami
-    Biji,       // Stage 1: Biji tertanam
-    Tunas,      // Stage 2: Tunas muncul
-    Dewasa,     // Stage 3: Tanaman dewasa
-    SiapPanen   // Stage 4: Siap dipanen
+    None = -1,
+    Biji = 0,
+    Tunas = 1,
+    Dewasa = 2,
+    SiapPanen = 3
 }
 
 /// <summary>
 /// Komponen pengendali pertumbuhan tanaman berbasis ScriptableObject (PlantData).
-/// Mengatur pergantian model prefab 4 stage dan durasi waktu sesuai data tanaman yang ditanam.
+/// Mengatur pergantian prefab model dan durasi waktu sesuai tahapan (stages) berbasis index.
+/// Index terakhir otomatis dianggap sebagai stage Siap Panen.
 /// </summary>
 public class PlantGrowth : MonoBehaviour
 {
@@ -26,66 +27,149 @@ public class PlantGrowth : MonoBehaviour
     [Tooltip("Data tanaman yang sedang tumbuh di pot ini (otomatis didapatkan dari Biji yang ditanam).")]
     public PlantData currentPlantData;
 
-    [Header("Status Pertumbuhan Saat Ini")]
-    public GrowthStage currentStage = GrowthStage.None;
+    [Header("Status Pertumbuhan Saat Ini (Index)")]
+    [Tooltip("Index stage saat ini (-1 = belum ditanami, 0 = stage pertama, dst. Jika mencapai index terakhir, tanaman Siap Panen).")]
+    public int currentStage = -1;
+
+    [Tooltip("Timer waktu pertumbuhan untuk stage saat ini.")]
     public float currentStageTimer = 0f;
+
+    [Header("Sistem Menyiram (Watering)")]
+    [Tooltip("Apakah tanaman saat ini sedang membutuhkan air sebelum melanjutkan pertumbuhan.")]
+    public bool needsWater = false;
+
+    [Tooltip("Batas waktu tanaman bertahan tanpa disiram (dalam detik). Jika habis, tanaman akan mati.")]
+    public float maxWaterWaitTime = 15f;
+
+    [Tooltip("Timer sisa waktu sebelum tanaman mati karena kekeringan.")]
+    public float currentWaterWaitTimer = 0f;
+
+    [Header("Indikator Siram (Prompt Interaksi)")]
+    [Tooltip("Anak objek ikon/teks indikator 'Siram' (muncul saat diarahkan dengan Gayung terisi air).")]
+    public GameObject waterPromptIndicator;
+
+    [Header("Bar Timer Kematian")]
+    [Tooltip("Objek root visual bar timer kekeringan (aktif selama tanaman butuh disiram).")]
+    public GameObject waterBarRoot;
+
+    [Tooltip("UI Slider untuk bar timer siram (opsional jika menggunakan World Space Canvas).")]
+    public UnityEngine.UI.Slider waterSlider;
+
+    [Tooltip("Transform bar pengisi untuk scaling visual bar (opsional, misal Sprite atau Cube horizontal).")]
+    public Transform waterBarFill;
+
+    // Field legacy agar referensi waterIndicator sebelumnya tetap terjaga
+    [HideInInspector] public GameObject waterIndicator;
 
     private GameObject _currentStageInstance;
     private bool _isGrowing = false;
+    private Pot _pot;
+    private Vector3 _initialBarScale = Vector3.one;
+    private Camera _mainCam;
+
+    public PlantStage[] ActiveStages => currentPlantData != null ? currentPlantData.GetStages() : null;
+    public int TotalStages => ActiveStages != null ? ActiveStages.Length : 0;
+    public bool IsReadyToHarvest => TotalStages > 0 && currentStage >= TotalStages - 1;
+    public bool IsPlanted => currentStage >= 0 && currentPlantData != null;
 
     private void Awake()
     {
+        _pot = GetComponentInParent<Pot>();
+        if (_pot == null) _pot = GetComponent<Pot>();
+
+        _mainCam = Camera.main;
+
         if (plantSpawnPoint == null)
         {
             plantSpawnPoint = transform;
         }
 
+        if (waterBarFill != null)
+        {
+            _initialBarScale = waterBarFill.localScale;
+        }
+
+        // Auto-assign legacy waterIndicator jika ada
+        if (waterIndicator != null)
+        {
+            string lower = waterIndicator.name.ToLower();
+            if (lower.Contains("bar") || lower.Contains("slider") || lower.Contains("fill"))
+            {
+                if (waterBarRoot == null) waterBarRoot = waterIndicator;
+            }
+            else
+            {
+                if (waterPromptIndicator == null) waterPromptIndicator = waterIndicator;
+            }
+        }
+
+        SetWaterBarActive(false);
+        SetPromptIndicator(false);
+
         // Jika ada data awal di Inspector dan ingin mulai langsung (opsional untuk testing)
-        if (currentPlantData != null && currentStage != GrowthStage.None)
+        if (currentPlantData != null && currentStage >= 0)
         {
             SetStage(currentStage);
             _isGrowing = true;
         }
         else
         {
-            SetStage(GrowthStage.None);
+            SetStage(-1);
+        }
+    }
+
+    private void LateUpdate()
+    {
+        if (_mainCam == null) _mainCam = Camera.main;
+        if (_mainCam == null) return;
+
+        // Billboard effect: buat bar timer dan prompt siram selalu menghadap ke kamera
+        if (waterBarRoot != null && waterBarRoot.activeSelf)
+        {
+            waterBarRoot.transform.forward = _mainCam.transform.forward;
+        }
+
+        if (waterPromptIndicator != null && waterPromptIndicator.activeSelf)
+        {
+            waterPromptIndicator.transform.forward = _mainCam.transform.forward;
         }
     }
 
     private void Update()
     {
-        if (!_isGrowing || currentPlantData == null || currentStage == GrowthStage.SiapPanen || currentStage == GrowthStage.None)
+        if (!_isGrowing || currentPlantData == null || currentStage < 0 || IsReadyToHarvest)
             return;
 
+        PlantStage[] stages = ActiveStages;
+        if (stages == null || currentStage >= stages.Length)
+            return;
+
+        // Jika stage saat ini butuh air, kurangi timer toleransi kekeringan (timer pertumbuhan stage ditahan)
+        if (needsWater)
+        {
+            currentWaterWaitTimer -= Time.deltaTime;
+            UpdateWaterBarVisual();
+
+            if (currentWaterWaitTimer <= 0f)
+            {
+                Die();
+            }
+            return;
+        }
+
+        // Jika sudah disiram (atau stage tidak butuh air), timer durasi stage berjalan
         currentStageTimer += Time.deltaTime;
 
-        switch (currentStage)
+        float stageDuration = stages[currentStage].duration;
+        if (currentStageTimer >= stageDuration)
         {
-            case GrowthStage.Biji:
-                if (currentStageTimer >= currentPlantData.timeBijiToTunas)
-                {
-                    SetStage(GrowthStage.Tunas);
-                }
-                break;
-
-            case GrowthStage.Tunas:
-                if (currentStageTimer >= currentPlantData.timeTunasToDewasa)
-                {
-                    SetStage(GrowthStage.Dewasa);
-                }
-                break;
-
-            case GrowthStage.Dewasa:
-                if (currentStageTimer >= currentPlantData.timeDewasaToPanen)
-                {
-                    SetStage(GrowthStage.SiapPanen);
-                }
-                break;
+            SetStage(currentStage + 1);
         }
     }
 
     /// <summary>
     /// Memulai pertumbuhan tanaman berdasarkan data dari ScriptableObject (PlantData).
+    /// Dimulai dari index 0.
     /// </summary>
     public void StartGrowth(PlantData data)
     {
@@ -95,15 +179,15 @@ public class PlantGrowth : MonoBehaviour
         }
 
         _isGrowing = true;
-        SetStage(GrowthStage.Biji);
+        SetStage(0);
     }
 
     /// <summary>
-    /// Mengubah stage dan memunculkan prefab model yang sesuai dari PlantData.
+    /// Mengubah stage ke index tertentu, memunculkan prefab model, dan mengecek kebutuhan air serta status Siap Panen.
     /// </summary>
-    public void SetStage(GrowthStage newStage)
+    public void SetStage(int newStageIndex)
     {
-        currentStage = newStage;
+        currentStage = newStageIndex;
         currentStageTimer = 0f;
 
         // Hancurkan model visual stage sebelumnya
@@ -113,35 +197,169 @@ public class PlantGrowth : MonoBehaviour
             _currentStageInstance = null;
         }
 
-        if (newStage == GrowthStage.None || currentPlantData == null)
-            return;
-
-        // Ambil prefab sesuai stage dari PlantData
-        GameObject prefabToSpawn = null;
-        switch (newStage)
+        PlantStage[] stages = ActiveStages;
+        if (newStageIndex < 0 || stages == null || newStageIndex >= stages.Length)
         {
-            case GrowthStage.Biji:
-                prefabToSpawn = currentPlantData.bijiPrefab;
-                break;
-            case GrowthStage.Tunas:
-                prefabToSpawn = currentPlantData.tunasPrefab;
-                break;
-            case GrowthStage.Dewasa:
-                prefabToSpawn = currentPlantData.dewasaPrefab;
-                break;
-            case GrowthStage.SiapPanen:
-                prefabToSpawn = currentPlantData.siapPanenPrefab;
-                break;
+            currentStage = -1;
+            SetWaterBarActive(false);
+            SetPromptIndicator(false);
+            needsWater = false;
+            return;
         }
 
+        PlantStage stageData = stages[newStageIndex];
+
         // Munculkan prefab model di titik spawn pot
-        if (prefabToSpawn != null)
+        if (stageData != null && stageData.stagePrefab != null)
         {
             Transform parent = plantSpawnPoint != null ? plantSpawnPoint : transform;
-            _currentStageInstance = Instantiate(prefabToSpawn, parent);
+            _currentStageInstance = Instantiate(stageData.stagePrefab, parent);
             _currentStageInstance.transform.localPosition = Vector3.zero;
             _currentStageInstance.transform.localRotation = Quaternion.identity;
         }
+
+        // Cek apakah stage ini adalah index terakhir (Siap Panen)
+        if (IsReadyToHarvest)
+        {
+            needsWater = false;
+            SetWaterBarActive(false);
+            SetPromptIndicator(false);
+            Debug.Log($"[PlantGrowth] Tanaman mencapai stage terakhir (Index: {currentStage} - {stageData?.stageName}): SIAP PANEN!");
+            return;
+        }
+
+        // Jika bukan stage terakhir, periksa apakah stage ini membutuhkan air sebelum proses tumbuh
+        if (stageData != null && stageData.needsWater)
+        {
+            TriggerNeedsWater();
+        }
+        else
+        {
+            needsWater = false;
+            SetWaterBarActive(false);
+            SetPromptIndicator(false);
+        }
+    }
+
+    // Overload untuk kemudahan jika menggunakan enum
+    public void SetStage(GrowthStage stage)
+    {
+        SetStage((int)stage);
+    }
+
+    /// <summary>
+    /// Memicu status kebutuhan air, mengaktifkan timer kematian, dan memunculkan bar timer.
+    /// Indikator 'Siram' hanya akan menyala saat pemain membidik pot dengan gayung berisi air.
+    /// </summary>
+    public void TriggerNeedsWater()
+    {
+        needsWater = true;
+        currentWaterWaitTimer = maxWaterWaitTime;
+        UpdateWaterBarVisual();
+        SetWaterBarActive(true);
+        SetPromptIndicator(false);
+    }
+
+    /// <summary>
+    /// Menyiram tanaman: mematikan indikator siram & bar timer, lalu melanjutkan perhitungan waktu tumbuh.
+    /// </summary>
+    public void WaterPlant()
+    {
+        if (!needsWater) return;
+
+        needsWater = false;
+        SetWaterBarActive(false);
+        SetPromptIndicator(false);
+
+        if (_pot != null)
+        {
+            _pot.SetWaterIndicator(false);
+        }
+
+        Debug.Log($"[PlantGrowth] Tanaman pada stage index {currentStage} berhasil disiram! Pertumbuhan dilanjutkan.");
+    }
+
+    /// <summary>
+    /// Tanaman mati dan hilang karena kehabisan waktu sebelum disiram.
+    /// Pot dikembalikan ke status kosong sehingga bisa ditanami kembali.
+    /// </summary>
+    public void Die()
+    {
+        Debug.Log("[PlantGrowth] Tanaman mati karena kehabisan air!");
+        needsWater = false;
+        _isGrowing = false;
+        SetWaterBarActive(false);
+        SetPromptIndicator(false);
+        SetStage(-1);
+        currentPlantData = null;
+
+        if (_pot == null)
+        {
+            _pot = GetComponentInParent<Pot>();
+            if (_pot == null) _pot = GetComponent<Pot>();
+        }
+
+        if (_pot != null)
+        {
+            _pot.SetWaterIndicator(false);
+            _pot.isPlanted = false;
+        }
+    }
+
+    /// <summary>
+    /// Memperbarui visual bar timer siram (Slider UI atau Transform fill scale).
+    /// </summary>
+    private void UpdateWaterBarVisual()
+    {
+        float ratio = maxWaterWaitTime > 0f ? Mathf.Clamp01(currentWaterWaitTimer / maxWaterWaitTime) : 0f;
+
+        if (waterSlider != null)
+        {
+            waterSlider.value = ratio;
+        }
+
+        if (waterBarFill != null)
+        {
+            waterBarFill.localScale = new Vector3(_initialBarScale.x * ratio, _initialBarScale.y, _initialBarScale.z);
+        }
+    }
+
+    /// <summary>
+    /// Menampilkan atau menyembunyikan ikon/tulisan indikator 'Siram' (prompt interaksi).
+    /// </summary>
+    public void SetPromptIndicator(bool show)
+    {
+        if (waterPromptIndicator != null)
+        {
+            waterPromptIndicator.SetActive(show && needsWater);
+        }
+    }
+
+    /// <summary>
+    /// Menampilkan atau menyembunyikan bar timer siram.
+    /// </summary>
+    public void SetWaterBarActive(bool show)
+    {
+        if (waterBarRoot != null)
+        {
+            waterBarRoot.SetActive(show);
+        }
+
+        if (waterSlider != null)
+        {
+            waterSlider.gameObject.SetActive(show);
+        }
+
+        if (waterBarFill != null)
+        {
+            waterBarFill.gameObject.SetActive(show);
+        }
+    }
+
+    // Metode backward compatibility
+    public void SetWaterIndicator(bool show)
+    {
+        SetPromptIndicator(show);
     }
 
     private void OnDestroy()

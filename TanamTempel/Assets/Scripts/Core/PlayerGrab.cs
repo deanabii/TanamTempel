@@ -7,7 +7,8 @@ using UnityEngine.InputSystem;
 /// Komponen pengendali Grab sederhana (MVP).
 /// Mendeteksi objek dengan lebar raycast yang bisa diatur, memunculkan indikator di atas objek,
 /// memindahkan ke tangan, menempatkan Pot ke dinding ber-tag 'Grid' dengan Ghost preview,
-/// serta menanam Biji ke dalam Pot dengan indikator 'Tanam'.
+/// menanam Biji ke dalam Pot dengan indikator 'Tanam',
+/// serta menyiram Pot dan mengisi Gayung di Tong Air.
 /// </summary>
 public class PlayerGrab : MonoBehaviour
 {
@@ -25,6 +26,8 @@ public class PlayerGrab : MonoBehaviour
     private Grabbable _currentTarget;
     private Grabbable _heldItem;
     private Pot _currentHoveredPotForPlanting;
+    private TongAir _currentHoveredTongAir;
+    private Pot _currentHoveredPotForWatering;
 
     private void Start()
     {
@@ -32,6 +35,13 @@ public class PlayerGrab : MonoBehaviour
         {
             playerCamera = Camera.main.transform;
         }
+    }
+
+    private void OnDisable()
+    {
+        ClearGrabTarget();
+        ClearPlantingTarget();
+        ClearWateringTarget();
     }
 
     private void Update()
@@ -47,6 +57,7 @@ public class PlayerGrab : MonoBehaviour
             if (heldPot != null)
             {
                 ClearPlantingTarget();
+                ClearWateringTarget();
                 CheckGridPlacement(heldPot);
                 return;
             }
@@ -55,12 +66,23 @@ public class PlayerGrab : MonoBehaviour
             Biji heldBiji = _heldItem.GetComponent<Biji>();
             if (heldBiji != null || _heldItem.CompareTag("Biji"))
             {
+                ClearWateringTarget();
                 CheckSeedPlanting(heldBiji);
                 return;
             }
 
-            // C. Jika barang biasa dan tombol ditekan -> Drop
+            // C. Cek apakah memegang Gayung (untuk menyiram tanaman atau mengisi air di Tong Air)
+            Gayung heldGayung = _heldItem.GetComponent<Gayung>();
+            if (heldGayung != null || _heldItem.CompareTag("Gayung"))
+            {
+                ClearPlantingTarget();
+                CheckGayungInteractions(heldGayung);
+                return;
+            }
+
+            // D. Jika barang biasa dan tombol ditekan -> Drop
             ClearPlantingTarget();
+            ClearWateringTarget();
             if (IsInputTriggered())
             {
                 _heldItem.Drop();
@@ -69,8 +91,9 @@ public class PlayerGrab : MonoBehaviour
             return;
         }
 
-        // Jika tangan kosong, pastikan indikator tanam mati
+        // Jika tangan kosong, pastikan indikator tanam dan siram mati
         ClearPlantingTarget();
+        ClearWateringTarget();
 
         // 2. Jika tangan kosong, cari objek di depan
         CheckLookAt();
@@ -88,6 +111,138 @@ public class PlayerGrab : MonoBehaviour
             {
                 Debug.LogWarning("Hand Point belum diisi di Inspector!");
             }
+        }
+    }
+
+    /// <summary>
+    /// Menangani interaksi pemain saat memegang Gayung:
+    /// - Melihat ke Tong Air: memunculkan indikator 'Isi Air', tekan E/tap untuk mengisi penuh (3/3).
+    /// - Melihat ke Pot yang butuh air: tekan E/tap untuk menyiram (mengurangi 1 air gayung).
+    /// - Melihat ke arah lain: tekan E/tap untuk melepaskan (drop) gayung ke lantai.
+    /// </summary>
+    private void CheckGayungInteractions(Gayung gayung)
+    {
+        if (playerCamera == null) return;
+        if (gayung == null && _heldItem != null) gayung = _heldItem.GetComponent<Gayung>();
+
+        Ray ray = new Ray(playerCamera.position, playerCamera.forward);
+        RaycastHit hit;
+
+        TongAir targetTong = null;
+        Pot targetPot = null;
+        Pot lookedAtPotNeedsWater = null;
+
+        // Gunakan Raycast lurus presisi agar indikator segera hilang saat crosshair beralih
+        if (Physics.Raycast(ray, out hit, grabDistance, grabLayer))
+        {
+            // 1. Cek apakah mengarah ke Tong Air
+            targetTong = hit.collider.GetComponentInParent<TongAir>();
+
+            // 2. Jika bukan Tong Air, cek apakah mengarah ke Pot yang butuh disiram
+            if (targetTong == null)
+            {
+                Pot foundPot = hit.collider.GetComponentInParent<Pot>();
+                if (foundPot != null && foundPot.isPlanted && foundPot.plantGrowth != null && foundPot.plantGrowth.needsWater)
+                {
+                    lookedAtPotNeedsWater = foundPot;
+
+                    // Indikator siram hanya muncul jika gayung sedang terisi air
+                    if (gayung != null && gayung.HasWater)
+                    {
+                        targetPot = foundPot;
+                    }
+                }
+            }
+        }
+
+        // Perbarui tampilan indikator Tong Air
+        if (_currentHoveredTongAir != targetTong)
+        {
+            if (_currentHoveredTongAir != null)
+            {
+                _currentHoveredTongAir.SetIndicator(false);
+            }
+
+            _currentHoveredTongAir = targetTong;
+
+            if (_currentHoveredTongAir != null)
+            {
+                _currentHoveredTongAir.SetIndicator(true);
+            }
+        }
+
+        // Perbarui tampilan indikator Siram pada Pot
+        if (_currentHoveredPotForWatering != targetPot)
+        {
+            if (_currentHoveredPotForWatering != null)
+            {
+                _currentHoveredPotForWatering.SetWaterIndicator(false);
+            }
+
+            _currentHoveredPotForWatering = targetPot;
+
+            if (_currentHoveredPotForWatering != null)
+            {
+                _currentHoveredPotForWatering.SetWaterIndicator(true);
+            }
+        }
+
+        // Eksekusi aksi jika tombol ditekan (E / tap)
+        if (IsInputTriggered())
+        {
+            // A. Interaksi dengan Tong Air -> Isi gayung hingga penuh
+            if (_currentHoveredTongAir != null)
+            {
+                if (gayung != null)
+                {
+                    gayung.Refill();
+                }
+                return;
+            }
+
+            // B. Interaksi dengan Pot yang butuh air -> Siram tanaman
+            if (_currentHoveredPotForWatering != null)
+            {
+                if (gayung != null && gayung.HasWater)
+                {
+                    Pot potToWater = _currentHoveredPotForWatering;
+                    _currentHoveredPotForWatering = null;
+                    potToWater.SetWaterIndicator(false);
+
+                    if (gayung.UseWater())
+                    {
+                        potToWater.plantGrowth.WaterPlant();
+                    }
+                }
+                return;
+            }
+
+            // C. Jika membidik pot yang butuh air tetapi gayung kosong -> Beri pesan, jangan drop
+            if (lookedAtPotNeedsWater != null)
+            {
+                Debug.Log("[PlayerGrab] Gayung kosong! Isi air di Tong Air terlebih dahulu.");
+                return;
+            }
+
+            // D. Tidak membidik Tong Air maupun Pot yang butuh air -> Drop gayung ke lantai
+            ClearWateringTarget();
+            _heldItem.Drop();
+            _heldItem = null;
+        }
+    }
+
+    private void ClearWateringTarget()
+    {
+        if (_currentHoveredTongAir != null)
+        {
+            _currentHoveredTongAir.SetIndicator(false);
+            _currentHoveredTongAir = null;
+        }
+
+        if (_currentHoveredPotForWatering != null)
+        {
+            _currentHoveredPotForWatering.SetWaterIndicator(false);
+            _currentHoveredPotForWatering = null;
         }
     }
 

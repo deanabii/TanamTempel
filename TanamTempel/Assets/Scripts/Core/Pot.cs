@@ -21,11 +21,14 @@ public class Pot : MonoBehaviour
     [Tooltip("Jarak dorong keluar dari dinding (meter).")]
     public float wallOffset = 0.5f;
 
-    [Header("Tanam / Planting")]
+    [Header("Tanam & Siram / Indicators")]
     [Tooltip("Anak objek yang memiliki SpriteRenderer khusus untuk tulisan/ikon indikator Tanam (berbeda dari indikator Grab)")]
     public GameObject plantIndicator;
 
-    [Tooltip("Komponen PlantGrowth yang mengatur 4 stage pertumbuhan tanaman. Jika dikosongkan, otomatis mencari di objek/anak objek.")]
+    [Tooltip("Anak objek yang memiliki SpriteRenderer/UI khusus untuk tulisan/ikon indikator Siram (muncul saat melihat pot dengan Gayung berair)")]
+    public GameObject waterIndicator;
+
+    [Tooltip("Komponen PlantGrowth yang mengatur tahapan pertumbuhan tanaman. Jika dikosongkan, otomatis mencari di objek/anak objek.")]
     public PlantGrowth plantGrowth;
 
     [Tooltip("Status apakah pot sudah ditanami")]
@@ -55,33 +58,70 @@ public class Pot : MonoBehaviour
             plantGrowth = GetComponentInChildren<PlantGrowth>();
         }
 
-        // Pastikan indikator tanam mati di awal
+        // Cari otomatis indikator siram jika belum di-assign di Inspector
+        if (waterIndicator == null)
+        {
+            SpriteRenderer[] srs = GetComponentsInChildren<SpriteRenderer>(true);
+            foreach (var sr in srs)
+            {
+                string lower = sr.gameObject.name.ToLower();
+                if (sr.gameObject != gameObject && (lower.Contains("siram") || lower.Contains("water")) && !lower.Contains("bar") && !lower.Contains("fill") && !lower.Contains("slider"))
+                {
+                    waterIndicator = sr.gameObject;
+                    break;
+                }
+            }
+        }
+
+        // Pastikan indikator tanam & siram mati di awal
         SetPlantIndicator(false);
+        SetWaterIndicator(false);
     }
 
     private void Start()
     {
-        // Pastikan kembali indikator tanam mati saat permainan dimulai
+        // Pastikan kembali indikator tanam & siram mati saat permainan dimulai
         SetPlantIndicator(false);
+        SetWaterIndicator(false);
     }
 
     private void OnDisable()
     {
         SetPlantIndicator(false);
+        SetWaterIndicator(false);
     }
 
     private void LateUpdate()
     {
+        if (_mainCam == null) _mainCam = Camera.main;
+
         // Pastikan indikator tanam selalu mati jika sudah ditanami
         if (isPlanted && plantIndicator != null && plantIndicator.activeSelf)
         {
             plantIndicator.SetActive(false);
         }
 
-        // Billboard effect: buat indikator tanam selalu menghadap ke kamera
-        if (plantIndicator != null && plantIndicator.activeSelf && _mainCam != null)
+        // Pastikan indikator siram selalu mati jika pot tidak butuh air
+        if (waterIndicator != null && waterIndicator.activeSelf)
         {
-            plantIndicator.transform.forward = _mainCam.transform.forward;
+            if (!isPlanted || plantGrowth == null || !plantGrowth.needsWater)
+            {
+                waterIndicator.SetActive(false);
+            }
+        }
+
+        // Billboard effect: buat indikator selalu menghadap ke kamera
+        if (_mainCam != null)
+        {
+            if (plantIndicator != null && plantIndicator.activeSelf)
+            {
+                plantIndicator.transform.forward = _mainCam.transform.forward;
+            }
+
+            if (waterIndicator != null && waterIndicator.activeSelf)
+            {
+                waterIndicator.transform.forward = _mainCam.transform.forward;
+            }
         }
     }
 
@@ -92,6 +132,7 @@ public class Pot : MonoBehaviour
     {
         isPlanted = true;
         SetPlantIndicator(false);
+        SetWaterIndicator(false);
 
         // Mulai siklus pertumbuhan tanaman dengan data benih
         if (plantGrowth != null)
@@ -109,6 +150,25 @@ public class Pot : MonoBehaviour
         {
             // Hanya menyala jika diminta (show == true) DAN belum ditanami (!isPlanted)
             plantIndicator.SetActive(show && !isPlanted);
+        }
+    }
+
+    /// <summary>
+    /// Menampilkan atau menyembunyikan indikator 'Siram' di atas pot.
+    /// Hanya menyala jika diminta (show == true) DAN pot sudah ditanami DAN sedang membutuhkan air.
+    /// </summary>
+    public void SetWaterIndicator(bool show)
+    {
+        bool canWater = isPlanted && plantGrowth != null && plantGrowth.needsWater;
+
+        if (waterIndicator != null)
+        {
+            waterIndicator.SetActive(show && canWater);
+        }
+
+        if (plantGrowth != null)
+        {
+            plantGrowth.SetPromptIndicator(show && canWater);
         }
     }
 
@@ -221,7 +281,8 @@ public class Pot : MonoBehaviour
             PlantGrowth ghostGrowth = ghostInstance.GetComponentInChildren<PlantGrowth>();
             if (ghostGrowth != null)
             {
-                ghostGrowth.SetStage(GrowthStage.None);
+                ghostGrowth.SetWaterIndicator(false);
+                ghostGrowth.SetStage(-1);
                 Destroy(ghostGrowth);
             }
 

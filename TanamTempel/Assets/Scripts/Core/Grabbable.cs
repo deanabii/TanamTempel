@@ -9,6 +9,13 @@ public class Grabbable : MonoBehaviour
     [Tooltip("Anak objek yang memiliki SpriteRenderer untuk tulisan/ikon indikator Grab")]
     public GameObject indicator;
 
+    [Header("Pengaturan Pegang (Grab)")]
+    [Tooltip("Rotasi objek saat dipegang di tangan pemain (Euler Angles: X, Y, Z).")]
+    public Vector3 grabRotation = Vector3.zero;
+
+    [Tooltip("Offset posisi objek saat dipegang relatif terhadap posisi tangan.")]
+    public Vector3 grabPositionOffset = Vector3.zero;
+
     [HideInInspector] public bool isGrabbed = false;
 
     private Rigidbody _rb;
@@ -30,7 +37,7 @@ public class Grabbable : MonoBehaviour
             foreach (var sr in srs)
             {
                 string lower = sr.gameObject.name.ToLower();
-                if (sr.gameObject != gameObject && !lower.Contains("plant") && !lower.Contains("tanam"))
+                if (sr.gameObject != gameObject && !lower.Contains("plant") && !lower.Contains("tanam") && !lower.Contains("water") && !lower.Contains("siram") && !lower.Contains("fill") && !lower.Contains("isi"))
                 {
                     indicator = sr.gameObject;
                     break;
@@ -75,8 +82,8 @@ public class Grabbable : MonoBehaviour
 
         // Pindahkan ke tangan dan jaga ukuran asli
         transform.SetParent(hand);
-        transform.localPosition = Vector3.zero;
-        transform.localRotation = Quaternion.identity;
+        transform.localPosition = grabPositionOffset;
+        transform.localRotation = Quaternion.Euler(grabRotation);
         transform.localScale = _originalLocalScale;
     }
 
