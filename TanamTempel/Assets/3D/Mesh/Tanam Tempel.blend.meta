@@ -57,6 +57,11 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Kawat
+    second: {fileID: 2100000, guid: 9f32862281e144d6ebe0dfcdef67522d, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Kayu
     second: {fileID: 2100000, guid: eb3d710bda1295648871f27d9e9b2a02, type: 2}
   - first:
