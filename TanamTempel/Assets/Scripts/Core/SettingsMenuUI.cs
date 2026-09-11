@@ -12,7 +12,17 @@ public class SettingsMenuUI : MonoBehaviour
     private static SettingsMenuUI _instance;
     public static SettingsMenuUI Instance => _instance;
 
-    public static bool IsSettingsOpen { get; private set; } = false;
+    public static bool IsSettingsOpen
+    {
+        get
+        {
+            if (_instance != null && _instance.settingsPanel != null)
+            {
+                return _instance.settingsPanel.activeInHierarchy;
+            }
+            return false;
+        }
+    }
 
     [Header("Panel Utama Pengaturan")]
     [Tooltip("Panel UI utama Menu Pengaturan (jika kosong, otomatis mencari atau membuat di Canvas).")]
@@ -130,6 +140,11 @@ public class SettingsMenuUI : MonoBehaviour
             interactAndShopCurrentKeyText = interactCurrentKeyText;
         }
 
+        if (settingsPanel != null)
+        {
+            FindComponentsInPanel(settingsPanel);
+        }
+
         if (interactAndShopRebindButton != null)
         {
             interactAndShopRebindButton.onClick.RemoveAllListeners();
@@ -162,7 +177,7 @@ public class SettingsMenuUI : MonoBehaviour
 
         if (closeButton != null)
         {
-            closeButton.onClick.RemoveAllListeners();
+            closeButton.onClick.RemoveListener(CloseSettings);
             closeButton.onClick.AddListener(CloseSettings);
         }
     }
@@ -233,7 +248,6 @@ public class SettingsMenuUI : MonoBehaviour
     /// </summary>
     public void OpenSettings()
     {
-        IsSettingsOpen = true;
         AudioGame.Instance?.PlayButtonClick();
 
         if (rebindModalPanel != null)
@@ -261,12 +275,11 @@ public class SettingsMenuUI : MonoBehaviour
     /// </summary>
     public void CloseSettings()
     {
-        IsSettingsOpen = false;
         AudioGame.Instance?.PlayButtonClick();
 
         CancelRebind();
 
-        if (settingsPanel != null)
+        if (settingsPanel != null && settingsPanel.activeSelf)
         {
             if (GameManager.Instance != null)
             {
@@ -276,6 +289,26 @@ public class SettingsMenuUI : MonoBehaviour
             {
                 settingsPanel.SetActive(false);
             }
+        }
+
+        if (UnityEngine.EventSystems.EventSystem.current != null)
+        {
+            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+        }
+
+        UpdateUI();
+    }
+
+    /// <summary>
+    /// Dipanggil ketika panel pengaturan ditutup dari luar (misal: tombol yang langsung memanggil GameManager.ClosePanel).
+    /// </summary>
+    public void OnPanelClosedExternally()
+    {
+        CancelRebind();
+
+        if (UnityEngine.EventSystems.EventSystem.current != null)
+        {
+            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
         }
 
         UpdateUI();
@@ -318,6 +351,9 @@ public class SettingsMenuUI : MonoBehaviour
 
         if (menuCurrentKeyText != null)
         {
+            menuCurrentKeyText.enableAutoSizing = true;
+            menuCurrentKeyText.fontSizeMin = 11;
+            menuCurrentKeyText.fontSizeMax = 18;
             menuCurrentKeyText.text = KeyBindingManager.Instance.GetKeyName(KeyAction.SettingsMenu);
         }
     }
@@ -329,6 +365,8 @@ public class SettingsMenuUI : MonoBehaviour
     {
         // Cari panel yang sudah ada di scene terlebih dahulu
         GameObject existing = GameObject.Find("SettingsPanel");
+        if (existing == null) existing = GameObject.Find("Setting Panel");
+        if (existing == null) existing = GameObject.Find("Settings");
         if (existing != null)
         {
             settingsPanel = existing;
@@ -416,11 +454,14 @@ public class SettingsMenuUI : MonoBehaviour
         GameObject displayBox = new GameObject(rowId + "KeyDisplay", typeof(RectTransform), typeof(Image));
         displayBox.transform.SetParent(parent, false);
         RectTransform rtBox = displayBox.GetComponent<RectTransform>();
-        rtBox.anchoredPosition = new Vector2(100, posY);
-        rtBox.sizeDelta = new Vector2(75, 42);
+        rtBox.anchoredPosition = new Vector2(85, posY);
+        rtBox.sizeDelta = new Vector2(105, 42);
         displayBox.GetComponent<Image>().color = new Color(0.08f, 0.1f, 0.14f, 1f);
 
-        keyText = CreateText(displayBox.transform, "E", Vector2.zero, new Vector2(75, 42), 20, FontStyle.Bold, Color.yellow);
+        keyText = CreateText(displayBox.transform, "E", Vector2.zero, new Vector2(105, 42), 18, FontStyle.Bold, Color.yellow);
+        keyText.enableAutoSizing = true;
+        keyText.fontSizeMin = 11;
+        keyText.fontSizeMax = 18;
 
         // 3. Tombol untuk membuka modal rebinding
         rebindBtn = CreateActionButton(parent, rowId + "RebindBtn", "Ubah", new Vector2(210, posY), new Vector2(110, 42), new Color(0.25f, 0.4f, 0.65f, 1f));
@@ -440,7 +481,27 @@ public class SettingsMenuUI : MonoBehaviour
 
         if (menuRebindButton == null) menuRebindButton = panel.transform.Find("MenuRebindBtn")?.GetComponent<Button>();
         if (resetButton == null) resetButton = panel.transform.Find("ResetBtn")?.GetComponent<Button>();
-        if (closeButton == null) closeButton = panel.transform.Find("CloseBtn")?.GetComponent<Button>();
+        
+        if (closeButton == null)
+        {
+            closeButton = panel.transform.Find("CloseBtn")?.GetComponent<Button>()
+                ?? panel.transform.Find("Btn Back")?.GetComponent<Button>()
+                ?? panel.transform.Find("BtnBack")?.GetComponent<Button>();
+
+            if (closeButton == null)
+            {
+                Button[] buttons = panel.GetComponentsInChildren<Button>(true);
+                foreach (var btn in buttons)
+                {
+                    string bName = btn.gameObject.name.ToLower();
+                    if (bName.Contains("back") || bName.Contains("close") || bName.Contains("kembali") || bName.Contains("tutup"))
+                    {
+                        closeButton = btn;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     private TMPro.TextMeshProUGUI CreateText(Transform parent, string content, Vector2 pos, Vector2 size, int fontSize, FontStyle style, Color color, TMPro.TextAlignmentOptions align = TMPro.TextAlignmentOptions.Center)

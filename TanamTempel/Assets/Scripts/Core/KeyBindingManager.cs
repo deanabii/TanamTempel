@@ -50,8 +50,11 @@ public class KeyBindingManager : MonoBehaviour
     public Key interactKey { get => interactAndShopKey; set => interactAndShopKey = value; }
     public Key shopKey { get => interactAndShopKey; set => interactAndShopKey = value; }
 
-    [Tooltip("Tombol untuk membuka / menutup Menu Pengaturan.")]
+    [Tooltip("Tombol utama untuk membuka / menutup Menu Pengaturan.")]
     public Key settingsMenuKey = Key.Escape;
+
+    [Tooltip("Tombol alternatif kedua untuk membuka / menutup Menu Pengaturan (Return / Enter).")]
+    public Key settingsMenuAltKey = Key.Enter;
 #endif
 
     [Header("Key Bindings (Legacy Fallback)")]
@@ -60,6 +63,7 @@ public class KeyBindingManager : MonoBehaviour
     public KeyCode legacyInteractKey { get => legacyInteractAndShopKey; set => legacyInteractAndShopKey = value; }
     public KeyCode legacyShopKey { get => legacyInteractAndShopKey; set => legacyInteractAndShopKey = value; }
     public KeyCode legacySettingsMenuKey = KeyCode.Escape;
+    public KeyCode legacySettingsMenuAltKey = KeyCode.Return;
 
     /// <summary>
     /// Event yang dipicu setiap kali salah satu tombol keybinding diubah.
@@ -77,6 +81,7 @@ public class KeyBindingManager : MonoBehaviour
     private const string PREF_INTERACT = "KeyBinding_Interact";
     private const string PREF_SHOP = "KeyBinding_Shop";
     private const string PREF_SETTINGS = "KeyBinding_Settings";
+    private const string PREF_SETTINGS_ALT = "KeyBinding_Settings_Alt";
 
     private void Awake()
     {
@@ -110,14 +115,17 @@ public class KeyBindingManager : MonoBehaviour
             interactShopStr = PlayerPrefs.GetString(PREF_INTERACT, "E");
         }
         string settingsStr = PlayerPrefs.GetString(PREF_SETTINGS, "Escape");
+        string settingsAltStr = PlayerPrefs.GetString(PREF_SETTINGS_ALT, "Enter");
 
 #if ENABLE_INPUT_SYSTEM
         if (Enum.TryParse(interactShopStr, true, out Key ik)) interactAndShopKey = ik;
         if (Enum.TryParse(settingsStr, true, out Key mk)) settingsMenuKey = mk;
+        if (Enum.TryParse(settingsAltStr, true, out Key mak)) settingsMenuAltKey = mak;
 #endif
 
         if (Enum.TryParse(interactShopStr, true, out KeyCode lik)) legacyInteractAndShopKey = lik;
         if (Enum.TryParse(settingsStr, true, out KeyCode lmk)) legacySettingsMenuKey = lmk;
+        if (Enum.TryParse(settingsAltStr, true, out KeyCode lmak)) legacySettingsMenuAltKey = lmak;
     }
 
     /// <summary>
@@ -130,30 +138,34 @@ public class KeyBindingManager : MonoBehaviour
         PlayerPrefs.SetString(PREF_INTERACT, interactAndShopKey.ToString());
         PlayerPrefs.SetString(PREF_SHOP, interactAndShopKey.ToString());
         PlayerPrefs.SetString(PREF_SETTINGS, settingsMenuKey.ToString());
+        PlayerPrefs.SetString(PREF_SETTINGS_ALT, settingsMenuAltKey.ToString());
 #else
         PlayerPrefs.SetString(PREF_INTERACT_SHOP, legacyInteractAndShopKey.ToString());
         PlayerPrefs.SetString(PREF_INTERACT, legacyInteractAndShopKey.ToString());
         PlayerPrefs.SetString(PREF_SHOP, legacyInteractAndShopKey.ToString());
         PlayerPrefs.SetString(PREF_SETTINGS, legacySettingsMenuKey.ToString());
+        PlayerPrefs.SetString(PREF_SETTINGS_ALT, legacySettingsMenuAltKey.ToString());
 #endif
         PlayerPrefs.Save();
         OnKeyBindingsChanged?.Invoke();
     }
 
     /// <summary>
-    /// Mengembalikan semua tombol ke default (Interact & Shop = E, Menu = Escape).
+    /// Mengembalikan semua tombol ke default (Interact & Shop = E, Menu = Escape / Return).
     /// </summary>
     public void ResetToDefault()
     {
 #if ENABLE_INPUT_SYSTEM
         interactAndShopKey = Key.E;
         settingsMenuKey = Key.Escape;
+        settingsMenuAltKey = Key.Enter;
 #endif
         legacyInteractAndShopKey = KeyCode.E;
         legacySettingsMenuKey = KeyCode.Escape;
+        legacySettingsMenuAltKey = KeyCode.Return;
 
         SaveBindings();
-        Debug.Log("[KeyBindingManager] Key bindings berhasil di-reset ke default (Interact & Shop: E, Menu: Esc).");
+        Debug.Log("[KeyBindingManager] Key bindings berhasil di-reset ke default (Interact & Shop: E, Menu: Esc / Return).");
     }
 
     /// <summary>
@@ -187,41 +199,90 @@ public class KeyBindingManager : MonoBehaviour
     public bool IsShopPressed() => IsInteractAndShopPressed();
 
     /// <summary>
-    /// Memeriksa apakah tombol Menu Pengaturan baru saja ditekan pada frame ini.
+    /// Memeriksa apakah tombol Menu Pengaturan (Escape atau Return/Enter) baru saja ditekan pada frame ini.
     /// </summary>
     public bool IsMenuPressed()
     {
         if (IsRebinding) return false;
+
 #if ENABLE_INPUT_SYSTEM
         if (Keyboard.current != null)
         {
-            var k = Keyboard.current[settingsMenuKey];
-            if (k != null && k.wasPressedThisFrame) return true;
+            // Cek primary menu key
+            if (settingsMenuKey != Key.None)
+            {
+                var k = Keyboard.current[settingsMenuKey];
+                if (k != null && k.wasPressedThisFrame) return true;
+            }
+
+            // Cek secondary / alt menu key
+            if (settingsMenuAltKey != Key.None)
+            {
+                var altK = Keyboard.current[settingsMenuAltKey];
+                if (altK != null && altK.wasPressedThisFrame) return true;
+            }
+
+            // Selalu dukung tombol Escape bawaan
+            if (Keyboard.current.escapeKey.wasPressedThisFrame) return true;
+
+            // Selalu dukung tombol Return / Enter bawaan (termasuk numpad enter)
+            if (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.numpadEnterKey.wasPressedThisFrame) return true;
         }
-#else
-        if (Input.GetKeyDown(legacySettingsMenuKey)) return true;
 #endif
+
+        try
+        {
+            if (Input.GetKeyDown(legacySettingsMenuKey)) return true;
+            if (legacySettingsMenuAltKey != KeyCode.None && Input.GetKeyDown(legacySettingsMenuAltKey)) return true;
+            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) return true;
+        }
+        catch { }
+
         return false;
     }
 
     /// <summary>
-    /// Mengambil nama tampilan teks untuk tombol aksi tertentu (misal: 'E', 'Esc', 'Space').
+    /// Mengambil nama tampilan teks untuk tombol aksi tertentu (misal: 'E', 'Esc / Return', 'Space').
     /// </summary>
     public string GetKeyName(KeyAction action)
     {
 #if ENABLE_INPUT_SYSTEM
+        if (action == KeyAction.SettingsMenu)
+        {
+            if ((settingsMenuKey == Key.Escape || settingsMenuKey == Key.None) && (settingsMenuAltKey == Key.Enter || settingsMenuAltKey == Key.None))
+            {
+                return "Esc / Return";
+            }
+            if (settingsMenuAltKey != Key.None && settingsMenuAltKey != settingsMenuKey)
+            {
+                return $"{FormatKeyName(settingsMenuKey.ToString())} / {FormatKeyName(settingsMenuAltKey.ToString())}";
+            }
+            return FormatKeyName(settingsMenuKey.ToString());
+        }
+
         Key key = action switch
         {
             KeyAction.InteractAndShop or KeyAction.Interact or KeyAction.Shop => interactAndShopKey,
-            KeyAction.SettingsMenu => settingsMenuKey,
             _ => Key.None
         };
         return FormatKeyName(key.ToString());
 #else
+        if (action == KeyAction.SettingsMenu)
+        {
+            if ((legacySettingsMenuKey == KeyCode.Escape || legacySettingsMenuKey == KeyCode.None) && (legacySettingsMenuAltKey == KeyCode.Return || legacySettingsMenuAltKey == KeyCode.None))
+            {
+                return "Esc / Return";
+            }
+            if (legacySettingsMenuAltKey != KeyCode.None && legacySettingsMenuAltKey != legacySettingsMenuKey)
+            {
+                return $"{FormatKeyName(legacySettingsMenuKey.ToString())} / {FormatKeyName(legacySettingsMenuAltKey.ToString())}";
+            }
+            return FormatKeyName(legacySettingsMenuKey.ToString());
+        }
+
         KeyCode code = action switch
         {
             KeyAction.InteractAndShop or KeyAction.Interact or KeyAction.Shop => legacyInteractAndShopKey,
-            KeyAction.SettingsMenu => legacySettingsMenuKey,
             _ => KeyCode.None
         };
         return FormatKeyName(code.ToString());
@@ -231,6 +292,8 @@ public class KeyBindingManager : MonoBehaviour
     private string FormatKeyName(string rawName)
     {
         if (rawName.Equals("Escape", StringComparison.OrdinalIgnoreCase)) return "Esc";
+        if (rawName.Equals("Enter", StringComparison.OrdinalIgnoreCase) || rawName.Equals("Return", StringComparison.OrdinalIgnoreCase)) return "Return";
+        if (rawName.Equals("NumpadEnter", StringComparison.OrdinalIgnoreCase) || rawName.Equals("KeypadEnter", StringComparison.OrdinalIgnoreCase)) return "Num Enter";
         if (rawName.Equals("Space", StringComparison.OrdinalIgnoreCase)) return "Space";
         if (rawName.StartsWith("Digit", StringComparison.OrdinalIgnoreCase)) return rawName.Substring(5);
         if (rawName.StartsWith("Alpha", StringComparison.OrdinalIgnoreCase)) return rawName.Substring(5);
@@ -324,6 +387,8 @@ public class KeyBindingManager : MonoBehaviour
                     break;
                 case KeyAction.SettingsMenu:
                     settingsMenuKey = parsedKey;
+                    if (parsedKey == Key.Escape) settingsMenuAltKey = Key.Enter;
+                    else if (parsedKey == Key.Enter) { settingsMenuKey = Key.Escape; settingsMenuAltKey = Key.Enter; }
                     break;
             }
         }
@@ -339,6 +404,8 @@ public class KeyBindingManager : MonoBehaviour
                     break;
                 case KeyAction.SettingsMenu:
                     legacySettingsMenuKey = parsedCode;
+                    if (parsedCode == KeyCode.Escape) legacySettingsMenuAltKey = KeyCode.Return;
+                    else if (parsedCode == KeyCode.Return) { legacySettingsMenuKey = KeyCode.Escape; legacySettingsMenuAltKey = KeyCode.Return; }
                     break;
             }
         }

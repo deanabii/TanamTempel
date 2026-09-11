@@ -57,7 +57,7 @@ public class GameManager : MonoBehaviour
 
     /// <summary>
     /// Property Static Global untuk mengecek apakah ADA UI/Panel yang sedang terbuka.
-    /// Mengembalikan true jika Toko terbuka, Game Over (Lose UI), Menang (Win UI), atau ada Panel Custom yang aktif.
+    /// Mengembalikan true jika Toko terbuka, UI Menang aktif, UI Kalah aktif, atau ada Panel Custom yang aktif.
     /// </summary>
     public static bool IsUIOpen
     {
@@ -66,8 +66,20 @@ public class GameManager : MonoBehaviour
             if (ShopUI.IsShopOpen) return true;
             if (_instance != null)
             {
-                if (_instance.IsGameOver || _instance.IsGameWon) return true;
-                if (_instance._activeCustomPanels.Count > 0) return true;
+                // Cek apakah UI Menang sedang aktif di hierarki
+                if (_instance.winUI != null && _instance.winUI.activeInHierarchy) return true;
+
+                // Cek apakah UI Kalah sedang aktif di hierarki
+                if (_instance.loseUI != null && _instance.loseUI.activeInHierarchy) return true;
+
+                // Cek apakah ada panel custom yang sedang aktif
+                if (_instance._activeCustomPanels != null)
+                {
+                    foreach (var panel in _instance._activeCustomPanels)
+                    {
+                        if (panel != null && panel.activeInHierarchy) return true;
+                    }
+                }
             }
             return false;
         }
@@ -152,6 +164,11 @@ public class GameManager : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
         SetPlayerControllersEnabled(true);
+
+        if (UnityEngine.EventSystems.EventSystem.current != null)
+        {
+            UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+        }
     }
 
     /// <summary>
@@ -227,6 +244,12 @@ public class GameManager : MonoBehaviour
         {
             _activeCustomPanels.Add(panel);
         }
+
+        if (!_wasUIOpen)
+        {
+            _wasUIOpen = true;
+            OnUIOpened();
+        }
     }
 
     /// <summary>
@@ -239,6 +262,57 @@ public class GameManager : MonoBehaviour
         if (_activeCustomPanels.Contains(panel))
         {
             _activeCustomPanels.Remove(panel);
+        }
+
+        // Jika panel yang ditutup adalah settingsPanel milik SettingsMenuUI, sinkronkan
+        if (SettingsMenuUI.Instance != null && panel == SettingsMenuUI.Instance.settingsPanel)
+        {
+            SettingsMenuUI.Instance.OnPanelClosedExternally();
+        }
+
+        // Jika setelah menutup panel tidak ada lagi UI yang terbuka, langsung pulihkan kontrol player
+        if (!IsUIOpen)
+        {
+            _wasUIOpen = false;
+            OnUIClosed();
+        }
+    }
+
+    /// <summary>
+    /// Menutup UI Kemenangan secara eksplisit dan memulihkan kontrol pemain.
+    /// </summary>
+    public void CloseWinUI()
+    {
+        if (winUI != null)
+        {
+            ClosePanel(winUI);
+        }
+        else
+        {
+            if (!IsUIOpen)
+            {
+                _wasUIOpen = false;
+                OnUIClosed();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Menutup UI Kekalahan secara eksplisit.
+    /// </summary>
+    public void CloseLoseUI()
+    {
+        if (loseUI != null)
+        {
+            ClosePanel(loseUI);
+        }
+        else
+        {
+            if (!IsUIOpen)
+            {
+                _wasUIOpen = false;
+                OnUIClosed();
+            }
         }
     }
 
@@ -356,12 +430,13 @@ public class GameManager : MonoBehaviour
         // Munculkan UI Menang
         if (winUI != null)
         {
-            winUI.SetActive(true);
+            OpenPanel(winUI);
         }
-
-        // Lepas kursor mouse
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        else
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
     }
 
     /// <summary>
@@ -377,11 +452,12 @@ public class GameManager : MonoBehaviour
         // Munculkan UI Kalah
         if (loseUI != null)
         {
-            loseUI.SetActive(true);
+            OpenPanel(loseUI);
         }
-
-        // Lepas kursor mouse
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        else
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
     }
 }
