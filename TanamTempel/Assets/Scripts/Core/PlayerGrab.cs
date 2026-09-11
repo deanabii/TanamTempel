@@ -17,23 +17,34 @@ public class PlayerGrab : MonoBehaviour
     [Tooltip("Objek kosong posisi tangan")]
     public Transform handPoint;
 
-    [Header("Pengaturan Deteksi")]
-    public float grabDistance = 3.0f;
-    [Tooltip("Lebar / radius area raycast untuk mengambil barang (0 = garis tipis, > 0 = lebih tebal/mudah dibidik)")]
-    public float raycastRadius = 0.3f;
+    [Header("Pengaturan Deteksi Box Collider")]
+    [Tooltip("Komponen BoxCollider yang dipasang di kamera untuk area interaksi. Jika kosong, akan dicari otomatis pada playerCamera.")]
+    public BoxCollider interactionBoxCollider;
     public LayerMask grabLayer = ~0;
+
+    [Header("Gizmos / Visualisasi Box Collider")]
+    public bool showGizmos = true;
+    public bool alwaysShowGizmos = false;
+    public Color gizmoBoxColor = Color.yellow;
+    public Color gizmoHitColor = Color.green;
 
     private Grabbable _currentTarget;
     private Grabbable _heldItem;
     private Pot _currentHoveredPotForPlanting;
     private TongAir _currentHoveredTongAir;
     private Pot _currentHoveredPotForWatering;
+    private Pot _currentHoveredPotForHarvesting;
 
     private void Start()
     {
         if (playerCamera == null && Camera.main != null)
         {
             playerCamera = Camera.main.transform;
+        }
+
+        if (interactionBoxCollider == null && playerCamera != null)
+        {
+            interactionBoxCollider = playerCamera.GetComponent<BoxCollider>();
         }
     }
 
@@ -42,10 +53,39 @@ public class PlayerGrab : MonoBehaviour
         ClearGrabTarget();
         ClearPlantingTarget();
         ClearWateringTarget();
+        ClearHarvestingTarget();
     }
 
     private void Update()
     {
+        // Hentikan aksi grab & raycast jika UI Toko, UI Menang, UI Kalah, atau panel lain sedang terbuka
+        if (GameManager.IsUIOpen)
+        {
+            ClearGrabTarget();
+            ClearPlantingTarget();
+            ClearWateringTarget();
+            ClearHarvestingTarget();
+            return;
+        }
+
+        // 0. Cek apakah pemain sedang melihat Pot yang Siap Panen (ready to harvest)
+        if (CheckHarvestInteraction())
+        {
+            ClearGrabTarget();
+            ClearPlantingTarget();
+            ClearWateringTarget();
+            return;
+        }
+
+        // Jika sedang membidik Pot Siap Panen (tanpa menekan tombol), utamakan indikator Panen daripada Grab/Tanam/Siram
+        if (_currentHoveredPotForHarvesting != null)
+        {
+            ClearGrabTarget();
+            ClearPlantingTarget();
+            ClearWateringTarget();
+            return;
+        }
+
         // 1. Jika sedang memegang sesuatu di tangan
         if (_heldItem != null)
         {
@@ -106,12 +146,120 @@ public class PlayerGrab : MonoBehaviour
                 _heldItem = _currentTarget;
                 _heldItem.Grab(handPoint);
                 _currentTarget = null;
+
+                Pot grabbedPot = _heldItem.GetComponent<Pot>();
+                if (grabbedPot != null)
+                {
+                    grabbedPot.OnGrabbed();
+                }
             }
             else
             {
                 Debug.LogWarning("Hand Point belum diisi di Inspector!");
             }
         }
+    }
+
+    /// <summary>
+    /// Mencari active BoxCollider (baik dari inspector atau otomatis dari playerCamera).
+    /// </summary>
+    public BoxCollider GetActiveBoxCollider()
+    {
+        if (interactionBoxCollider != null) return interactionBoxCollider;
+        if (playerCamera != null)
+        {
+            interactionBoxCollider = playerCamera.GetComponent<BoxCollider>();
+        }
+        return interactionBoxCollider;
+    }
+
+    /// <summary>
+    /// Melakukan deteksi objek di area interaksi menggunakan BoxCollider kamera.
+    /// </summary>
+    private bool PerformDetection(out RaycastHit hit, out Collider hitCollider)
+    {
+        hit = default;
+        hitCollider = null;
+
+        BoxCollider box = GetActiveBoxCollider();
+        if (box == null) return false;
+
+        Vector3 center = box.transform.TransformPoint(box.center);
+        Vector3 halfExtents = Vector3.Scale(box.size * 0.5f, box.transform.lossyScale);
+        Quaternion orientation = box.transform.rotation;
+
+        Collider[] overlaps = Physics.OverlapBox(center, halfExtents, orientation, grabLayer);
+        if (overlaps != null && overlaps.Length > 0)
+        {
+            float closestMetric = float.MaxValue;
+            Collider bestCol = null;
+            Transform cam = playerCamera != null ? playerCamera : transform;
+            Vector3 camPos = cam.position;
+            Vector3 camForward = cam.forward;
+
+            // 1. Pertama, cari collider yang MEMILIKI komponen interaktif
+            foreach (var col in overlaps)
+            {
+                if (col == box) continue;
+                if (col.transform == transform || col.transform.IsChildOf(transform)) continue;
+                if (playerCamera != null && (col.transform == playerCamera || col.transform.IsChildOf(playerCamera))) continue;
+
+                bool isInteractable = col.GetComponentInParent<Grabbable>() != null ||
+                                     col.GetComponentInParent<Pot>() != null ||
+                                     col.GetComponentInParent<TongAir>() != null ||
+                                     col.GetComponentInParent<WallGrid>() != null ||
+                                     col.CompareTag("Grid");
+
+                if (!isInteractable) continue;
+
+                // Prioritaskan objek yang paling searah dengan pandangan tengah kamera & terdekat
+                Vector3 toCol = (col.bounds.center - center).normalized;
+                float angleDev = 1.0f - Mathf.Clamp01(Vector3.Dot(camForward, toCol));
+                float dist = Vector3.Distance(camPos, col.bounds.center);
+                float metric = angleDev * 5f + dist;
+
+                if (metric < closestMetric)
+                {
+                    closestMetric = metric;
+                    bestCol = col;
+                }
+            }
+
+            // 2. Jika tidak ditemukan objek interaktif spesifik, cari collider umum terdekat
+            if (bestCol == null)
+            {
+                closestMetric = float.MaxValue;
+                foreach (var col in overlaps)
+                {
+                    if (col == box) continue;
+                    if (col.transform == transform || col.transform.IsChildOf(transform)) continue;
+                    if (playerCamera != null && (col.transform == playerCamera || col.transform.IsChildOf(playerCamera))) continue;
+
+                    float dist = Vector3.Distance(camPos, col.bounds.center);
+                    if (dist < closestMetric)
+                    {
+                        closestMetric = dist;
+                        bestCol = col;
+                    }
+                }
+            }
+
+            if (bestCol != null)
+            {
+                hitCollider = bestCol;
+
+                // Hit hitpoint & normal terdekat untuk penempatan grid / indikator
+                hit.point = bestCol.ClosestPoint(center);
+                Ray ray = new Ray(center, camForward);
+                if (!bestCol.Raycast(ray, out hit, 10f))
+                {
+                    hit.point = bestCol.ClosestPoint(center);
+                    hit.normal = -camForward;
+                }
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -125,32 +273,26 @@ public class PlayerGrab : MonoBehaviour
         if (playerCamera == null) return;
         if (gayung == null && _heldItem != null) gayung = _heldItem.GetComponent<Gayung>();
 
-        Ray ray = new Ray(playerCamera.position, playerCamera.forward);
-        RaycastHit hit;
-
         TongAir targetTong = null;
         Pot targetPot = null;
         Pot lookedAtPotNeedsWater = null;
 
-        // Gunakan Raycast lurus presisi agar indikator segera hilang saat crosshair beralih
-        if (Physics.Raycast(ray, out hit, grabDistance, grabLayer))
+        RaycastHit hit;
+        Collider hitCollider;
+
+        if (PerformDetection(out hit, out hitCollider))
         {
             // 1. Cek apakah mengarah ke Tong Air
-            targetTong = hit.collider.GetComponentInParent<TongAir>();
+            targetTong = hitCollider.GetComponentInParent<TongAir>();
 
-            // 2. Jika bukan Tong Air, cek apakah mengarah ke Pot yang butuh disiram
+            // 2. Jika bukan Tong Air, cek apakah mengarah ke Pot yang mebutuhkan air
             if (targetTong == null)
             {
-                Pot foundPot = hit.collider.GetComponentInParent<Pot>();
+                Pot foundPot = hitCollider.GetComponentInParent<Pot>();
                 if (foundPot != null && foundPot.isPlanted && foundPot.plantGrowth != null && foundPot.plantGrowth.needsWater)
                 {
                     lookedAtPotNeedsWater = foundPot;
-
-                    // Indikator siram hanya muncul jika gayung sedang terisi air
-                    if (gayung != null && gayung.HasWater)
-                    {
-                        targetPot = foundPot;
-                    }
+                    targetPot = foundPot;
                 }
             }
         }
@@ -247,6 +389,66 @@ public class PlayerGrab : MonoBehaviour
     }
 
     /// <summary>
+    /// Menangani deteksi pot saat tanaman di dalamnya Siap Panen (Ready to Harvest).
+    /// Mengarahkan pandangan (hover) ke pot akan memunculkan indikator Panen.
+    /// Menekan tombol interaksi (E / Klik Kiri) akan memanen tanaman, menambah koin, dan mengosongkan pot.
+    /// </summary>
+    private bool CheckHarvestInteraction()
+    {
+        if (playerCamera == null) return false;
+
+        RaycastHit hit;
+        Collider hitCollider;
+        Pot targetPot = null;
+
+        if (PerformDetection(out hit, out hitCollider))
+        {
+            Pot foundPot = hitCollider.GetComponentInParent<Pot>();
+            if (foundPot != null && foundPot.IsReadyToHarvest)
+            {
+                targetPot = foundPot;
+            }
+        }
+
+        // Perbarui tampilan indikator Panen pada pot yang di-hover
+        if (_currentHoveredPotForHarvesting != targetPot)
+        {
+            if (_currentHoveredPotForHarvesting != null)
+            {
+                _currentHoveredPotForHarvesting.SetHarvestIndicator(false);
+            }
+
+            _currentHoveredPotForHarvesting = targetPot;
+
+            if (_currentHoveredPotForHarvesting != null)
+            {
+                _currentHoveredPotForHarvesting.SetHarvestIndicator(true);
+            }
+        }
+
+        // Eksekusi panen jika tombol ditekan saat membidik pot Siap Panen
+        if (_currentHoveredPotForHarvesting != null && IsInputTriggered())
+        {
+            Pot potToHarvest = _currentHoveredPotForHarvesting;
+            _currentHoveredPotForHarvesting = null;
+
+            potToHarvest.Harvest();
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ClearHarvestingTarget()
+    {
+        if (_currentHoveredPotForHarvesting != null)
+        {
+            _currentHoveredPotForHarvesting.SetHarvestIndicator(false);
+            _currentHoveredPotForHarvesting = null;
+        }
+    }
+
+    /// <summary>
     /// Menangani deteksi pot saat memegang Biji dan melakukan penanaman.
     /// Menggunakan Raycast presisi agar indikator Tanam seketika mati saat pandangan beralih dari pot.
     /// </summary>
@@ -254,15 +456,14 @@ public class PlayerGrab : MonoBehaviour
     {
         if (playerCamera == null) return;
 
-        Ray ray = new Ray(playerCamera.position, playerCamera.forward);
         RaycastHit hit;
+        Collider hitCollider;
         Pot targetPot = null;
 
-        // Gunakan Raycast lurus presisi agar membidik pot tepat di tengah pandangan
-        if (Physics.Raycast(ray, out hit, grabDistance, grabLayer))
+        if (PerformDetection(out hit, out hitCollider))
         {
-            Pot foundPot = hit.collider.GetComponentInParent<Pot>();
-            if (foundPot != null && !foundPot.isPlanted)
+            Pot foundPot = hitCollider.GetComponentInParent<Pot>();
+            if (foundPot != null && foundPot.isPlacedOnWall && !foundPot.isPlanted)
             {
                 targetPot = foundPot;
             }
@@ -347,17 +548,17 @@ public class PlayerGrab : MonoBehaviour
     {
         if (playerCamera == null) return;
 
-        Ray ray = new Ray(playerCamera.position, playerCamera.forward);
         RaycastHit hit;
+        Collider hitCollider;
         bool lookingAtGrid = false;
 
-        if (Physics.Raycast(ray, out hit, grabDistance))
+        if (PerformDetection(out hit, out hitCollider))
         {
             // Cek apakah objek ber-tag 'Grid' atau punya komponen WallGrid
-            if (hit.collider.CompareTag("Grid") || hit.collider.GetComponentInParent<WallGrid>() != null)
+            if (hitCollider.CompareTag("Grid") || hitCollider.GetComponentInParent<WallGrid>() != null)
             {
                 lookingAtGrid = true;
-                WallGrid wallGrid = hit.collider.GetComponentInParent<WallGrid>();
+                WallGrid wallGrid = hitCollider.GetComponentInParent<WallGrid>();
                 float colliderOffset = pot.GetColliderOffset();
 
                 Vector3 placePos = wallGrid != null
@@ -365,6 +566,10 @@ public class PlayerGrab : MonoBehaviour
                     : hit.point + hit.normal * colliderOffset;
 
                 Quaternion placeRot = Quaternion.LookRotation(hit.normal);
+                if (wallGrid != null && wallGrid.gridRotationOffset != Vector3.zero)
+                {
+                    placeRot *= Quaternion.Euler(wallGrid.gridRotationOffset);
+                }
 
                 // Tampilkan ghost object di grid
                 pot.UpdateGhost(placePos, placeRot);
@@ -372,7 +577,7 @@ public class PlayerGrab : MonoBehaviour
                 // Jika tekan tombol E di Grid -> Tempatkan Pot ke dinding
                 if (IsInputTriggered())
                 {
-                    pot.Place(hit.transform, placePos, placeRot);
+                    pot.Place(hitCollider.transform, placePos, placeRot);
                     _heldItem = null;
                     return;
                 }
@@ -397,15 +602,13 @@ public class PlayerGrab : MonoBehaviour
     {
         if (playerCamera == null) return;
 
-        Ray ray = new Ray(playerCamera.position, playerCamera.forward);
         RaycastHit hit;
-        bool hasHit = raycastRadius > 0.001f
-            ? Physics.SphereCast(ray, raycastRadius, out hit, grabDistance, grabLayer)
-            : Physics.Raycast(ray, out hit, grabDistance, grabLayer);
+        Collider hitCollider;
+        bool hasHit = PerformDetection(out hit, out hitCollider);
 
         if (hasHit)
         {
-            Grabbable grabbable = hit.collider.GetComponentInParent<Grabbable>();
+            Grabbable grabbable = hitCollider.GetComponentInParent<Grabbable>();
             if (grabbable != null && !grabbable.isGrabbed)
             {
                 if (_currentTarget != grabbable)
@@ -435,19 +638,68 @@ public class PlayerGrab : MonoBehaviour
         return false;
     }
 
-    // Visualisasi lebar area di Scene View Editor
+    private void OnDrawGizmos()
+    {
+        if (alwaysShowGizmos)
+        {
+            DrawInteractionGizmos();
+        }
+    }
+
     private void OnDrawGizmosSelected()
     {
-        Transform cam = playerCamera != null ? playerCamera : transform;
-        Gizmos.color = _currentTarget != null ? Color.green : Color.yellow;
+        if (!alwaysShowGizmos)
+        {
+            DrawInteractionGizmos();
+        }
+    }
 
-        if (raycastRadius > 0.001f)
+    private void DrawInteractionGizmos()
+    {
+        if (!showGizmos) return;
+
+        BoxCollider box = GetActiveBoxCollider();
+        if (box == null) return;
+
+        Vector3 center = box.transform.TransformPoint(box.center);
+        Vector3 halfExtents = Vector3.Scale(box.size * 0.5f, box.transform.lossyScale);
+        Quaternion orientation = box.transform.rotation;
+
+        Collider[] overlaps = Physics.OverlapBox(center, halfExtents, orientation, grabLayer);
+        bool hasTarget = false;
+        if (overlaps != null)
         {
-            Gizmos.DrawWireSphere(cam.position + cam.forward * grabDistance, raycastRadius);
+            foreach (var col in overlaps)
+            {
+                if (col == box) continue;
+                if (col.transform == transform || col.transform.IsChildOf(transform)) continue;
+                if (playerCamera != null && (col.transform == playerCamera || col.transform.IsChildOf(playerCamera))) continue;
+
+                if (col.GetComponentInParent<Grabbable>() != null ||
+                    col.GetComponentInParent<Pot>() != null ||
+                    col.GetComponentInParent<TongAir>() != null ||
+                    col.GetComponentInParent<WallGrid>() != null ||
+                    col.CompareTag("Grid"))
+                {
+                    hasTarget = true;
+                    break;
+                }
+            }
         }
-        else
-        {
-            Gizmos.DrawLine(cam.position, cam.position + cam.forward * grabDistance);
-        }
+
+        Color mainColor = hasTarget ? gizmoHitColor : gizmoBoxColor;
+
+        Matrix4x4 oldMatrix = Gizmos.matrix;
+        Gizmos.matrix = Matrix4x4.TRS(box.transform.position, box.transform.rotation, box.transform.lossyScale);
+
+        Gizmos.color = mainColor;
+        Gizmos.DrawWireCube(box.center, box.size);
+
+        Color semiTransparent = mainColor;
+        semiTransparent.a = 0.15f;
+        Gizmos.color = semiTransparent;
+        Gizmos.DrawCube(box.center, box.size);
+
+        Gizmos.matrix = oldMatrix;
     }
 }

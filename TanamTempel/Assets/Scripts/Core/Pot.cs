@@ -15,24 +15,56 @@ public class Pot : MonoBehaviour
     [Tooltip("Material khusus untuk tampilan ghost preview (misal: material transparan/hologram).")]
     public Material ghostMaterial;
 
-    [Tooltip("Rotasi tambahan jika model pot perlu diputar saat menempel di dinding (Euler).")]
-    public Vector3 wallRotationOffset = Vector3.zero;
+    [Tooltip("Rotasi tambahan jika model pot perlu diputar saat menempel di dinding (Euler). Default: (0, 180, 0) agar pot dan ghost preview tidak terbalik 180 Y.")]
+    public Vector3 wallRotationOffset = new Vector3(0f, 180f, 0f);
 
     [Tooltip("Jarak dorong keluar dari dinding (meter).")]
     public float wallOffset = 0.5f;
 
-    [Header("Tanam & Siram / Indicators")]
-    [Tooltip("Anak objek yang memiliki SpriteRenderer khusus untuk tulisan/ikon indikator Tanam (berbeda dari indikator Grab)")]
+    [Header("Indikator Prompt Interaksi (Pot)")]
+    [Tooltip("Anak objek yang memiliki SpriteRenderer khusus untuk tulisan/ikon indikator Tanam (muncul saat memegang Biji dan melihat Pot kosong)")]
     public GameObject plantIndicator;
 
     [Tooltip("Anak objek yang memiliki SpriteRenderer/UI khusus untuk tulisan/ikon indikator Siram (muncul saat melihat pot dengan Gayung berair)")]
     public GameObject waterIndicator;
+
+    [Tooltip("Anak objek yang memiliki SpriteRenderer/UI indikator Prompt Panen (muncul saat mengarahkan pandangan ke pot Siap Panen)")]
+    public GameObject harvestIndicator;
 
     [Tooltip("Komponen PlantGrowth yang mengatur tahapan pertumbuhan tanaman. Jika dikosongkan, otomatis mencari di objek/anak objek.")]
     public PlantGrowth plantGrowth;
 
     [Tooltip("Status apakah pot sudah ditanami")]
     public bool isPlanted = false;
+
+    [Tooltip("Status apakah pot sedang terpasang di dinding grid.")]
+    public bool isPlacedOnWall = false;
+
+    [Header("PowerUp Pot")]
+    [Tooltip("Multiplier pengganda koin hasil panen di pot ini (misal: 1.0 = normal, 2.0 = 2x koin, 3.0 = 3x koin).")]
+    public float coinMultiplier = 1.0f;
+
+    [Tooltip("Multiplier kecepatan pertumbuhan tanaman di pot ini (misal: 1.0 = normal, 2.0 = 2x lebih cepat tumbuh).")]
+    public float growthSpeedMultiplier = 1.0f;
+
+    [Header("Visual Indikator Powerup (Opsional)")]
+    [Tooltip("Efek visual / VFX (misal Partikel/Aura Glow) yang diaktifkan saat pot memiliki Powerup.")]
+    public GameObject powerUpVFX;
+
+    [Tooltip("Komponen TextMeshProUGUI untuk menampilkan label teks Powerup di pot (misal: '2x KOIN' atau '2x SPEED').")]
+    public TMPro.TextMeshProUGUI powerUpTextTMP;
+
+    /// <summary>
+    /// Property untuk mengecek apakah tanaman di pot ini sudah Siap Panen.
+    /// </summary>
+    public bool IsReadyToHarvest
+    {
+        get
+        {
+            if (plantGrowth == null) plantGrowth = GetComponentInChildren<PlantGrowth>();
+            return isPlanted && plantGrowth != null && plantGrowth.IsReadyToHarvest;
+        }
+    }
 
     [HideInInspector] public GameObject ghostInstance;
     private Grabbable _grabbable;
@@ -43,6 +75,12 @@ public class Pot : MonoBehaviour
     {
         _grabbable = GetComponent<Grabbable>();
         _mainCam = Camera.main;
+
+        // Cek jika sejak awal pot sudah terpasang sebagai anak objek dari Grid
+        if (transform.parent != null && (transform.parent.CompareTag("Grid") || transform.parent.GetComponentInParent<WallGrid>() != null))
+        {
+            isPlacedOnWall = true;
+        }
 
         // Simpan ukuran lokal asli objek sejak awal
         _originalLocalScale = transform.localScale;
@@ -61,34 +99,57 @@ public class Pot : MonoBehaviour
         // Cari otomatis indikator siram jika belum di-assign di Inspector
         if (waterIndicator == null)
         {
-            SpriteRenderer[] srs = GetComponentsInChildren<SpriteRenderer>(true);
-            foreach (var sr in srs)
+            Transform[] allTransforms = GetComponentsInChildren<Transform>(true);
+            foreach (var t in allTransforms)
             {
-                string lower = sr.gameObject.name.ToLower();
-                if (sr.gameObject != gameObject && (lower.Contains("siram") || lower.Contains("water")) && !lower.Contains("bar") && !lower.Contains("fill") && !lower.Contains("slider"))
+                if (t.gameObject == gameObject) continue;
+                string lower = t.name.ToLower();
+                if ((lower.Contains("siram") || lower.Contains("water")) && !lower.Contains("bar") && !lower.Contains("fill") && !lower.Contains("slider") && !lower.Contains("need"))
                 {
-                    waterIndicator = sr.gameObject;
+                    waterIndicator = t.gameObject;
                     break;
                 }
             }
         }
 
-        // Pastikan indikator tanam & siram mati di awal
+        // Cari otomatis indikator prompt panen jika belum di-assign di Inspector
+        if (harvestIndicator == null)
+        {
+            Transform[] allTransforms = GetComponentsInChildren<Transform>(true);
+            foreach (var t in allTransforms)
+            {
+                if (t.gameObject == gameObject) continue;
+                string lower = t.name.ToLower();
+                if (lower.Contains("panen") || lower.Contains("harvest"))
+                {
+                    harvestIndicator = t.gameObject;
+                    break;
+                }
+            }
+        }
+
+        // Pastikan indikator prompt tanam, siram, & panen mati di awal
         SetPlantIndicator(false);
         SetWaterIndicator(false);
+        SetHarvestIndicator(false);
     }
 
     private void Start()
     {
-        // Pastikan kembali indikator tanam & siram mati saat permainan dimulai
+        // Pastikan kembali semua indikator prompt mati saat permainan dimulai
         SetPlantIndicator(false);
         SetWaterIndicator(false);
+        SetHarvestIndicator(false);
+
+        // Perbarui tampilan visual powerup di pot
+        UpdatePowerUpVisuals();
     }
 
     private void OnDisable()
     {
         SetPlantIndicator(false);
         SetWaterIndicator(false);
+        SetHarvestIndicator(false);
     }
 
     private void LateUpdate()
@@ -110,7 +171,16 @@ public class Pot : MonoBehaviour
             }
         }
 
-        // Billboard effect: buat indikator selalu menghadap ke kamera
+        // Indikator Prompt Panen (harvestIndicator): mati jika tanaman belum Siap Panen
+        if (harvestIndicator != null && harvestIndicator.activeSelf)
+        {
+            if (!IsReadyToHarvest)
+            {
+                harvestIndicator.SetActive(false);
+            }
+        }
+
+        // Billboard effect: buat indikator prompt selalu menghadap ke kamera
         if (_mainCam != null)
         {
             if (plantIndicator != null && plantIndicator.activeSelf)
@@ -122,14 +192,26 @@ public class Pot : MonoBehaviour
             {
                 waterIndicator.transform.forward = _mainCam.transform.forward;
             }
+
+            if (harvestIndicator != null && harvestIndicator.activeSelf)
+            {
+                harvestIndicator.transform.forward = _mainCam.transform.forward;
+            }
         }
     }
 
     /// <summary>
     /// Menanam benih ke dalam pot dan memicu siklus pertumbuhan pada PlantGrowth sesuai data benih.
+    /// Hanya dapat dilakukan jika pot sudah dipasang di dinding grid.
     /// </summary>
     public void Plant(PlantData data = null)
     {
+        if (!isPlacedOnWall)
+        {
+            Debug.LogWarning("[Pot] Pot harus dipasang di dinding grid terlebih dahulu sebelum dapat ditanami!");
+            return;
+        }
+
         isPlanted = true;
         SetPlantIndicator(false);
         SetWaterIndicator(false);
@@ -142,23 +224,33 @@ public class Pot : MonoBehaviour
     }
 
     /// <summary>
+    /// Dipanggil saat pot diambil oleh pemain dari dinding atau lantai.
+    /// </summary>
+    public void OnGrabbed()
+    {
+        isPlacedOnWall = false;
+        SetPlantIndicator(false);
+    }
+
+    /// <summary>
     /// Menampilkan atau menyembunyikan indikator 'Tanam' di atas pot.
     /// </summary>
     public void SetPlantIndicator(bool show)
     {
         if (plantIndicator != null)
         {
-            // Hanya menyala jika diminta (show == true) DAN belum ditanami (!isPlanted)
-            plantIndicator.SetActive(show && !isPlanted);
+            // Hanya menyala jika diminta (show == true) DAN terpasang di dinding (isPlacedOnWall) DAN belum ditanami (!isPlanted)
+            plantIndicator.SetActive(show && isPlacedOnWall && !isPlanted);
         }
     }
 
     /// <summary>
-    /// Menampilkan atau menyembunyikan indikator 'Siram' di atas pot.
+    /// Menampilkan atau menyembunyikan indikator prompt 'Siram' di atas pot.
     /// Hanya menyala jika diminta (show == true) DAN pot sudah ditanami DAN sedang membutuhkan air.
     /// </summary>
     public void SetWaterIndicator(bool show)
     {
+        if (plantGrowth == null) plantGrowth = GetComponentInChildren<PlantGrowth>();
         bool canWater = isPlanted && plantGrowth != null && plantGrowth.needsWater;
 
         if (waterIndicator != null)
@@ -166,9 +258,110 @@ public class Pot : MonoBehaviour
             waterIndicator.SetActive(show && canWater);
         }
 
+        // Fallback ke PlantGrowth jika waterIndicator di Pot belum terhubung
         if (plantGrowth != null)
         {
-            plantGrowth.SetPromptIndicator(show && canWater);
+            if (plantGrowth.needWateringIndicator != null && plantGrowth.needWateringIndicator != waterIndicator)
+            {
+                plantGrowth.needWateringIndicator.SetActive(show && canWater);
+            }
+            if (plantGrowth.waterIndicator != null && plantGrowth.waterIndicator != waterIndicator)
+            {
+                plantGrowth.waterIndicator.SetActive(show && canWater);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Menampilkan atau menyembunyikan indikator prompt 'Panen' di atas pot.
+    /// Hanya menyala jika diminta (show == true) DAN pot sudah ditanami DAN tanaman Siap Panen.
+    /// </summary>
+    public void SetHarvestIndicator(bool show)
+    {
+        if (plantGrowth == null) plantGrowth = GetComponentInChildren<PlantGrowth>();
+        bool canHarvest = IsReadyToHarvest;
+
+        if (harvestIndicator != null)
+        {
+            harvestIndicator.SetActive(show && canHarvest);
+        }
+
+        // Fallback ke PlantGrowth jika harvestIndicator di Pot belum terhubung
+        if (plantGrowth != null && plantGrowth.readyHarvestIndicator != null && plantGrowth.readyHarvestIndicator != harvestIndicator)
+        {
+            plantGrowth.readyHarvestIndicator.SetActive(show && canHarvest);
+        }
+    }
+
+    /// <summary>
+    /// Memanen tanaman di dalam pot:
+    /// 1. Mengambil koin reward dari ScriptableObject tanaman dan mengalikannya dengan coinMultiplier.
+    /// 2. Mereset pertumbuhan tanaman dan menghancurkan model visualnya.
+    /// 3. Mengubah kondisi pot menjadi tidak ditanam (isPlanted = false).
+    /// </summary>
+    public void Harvest()
+    {
+        if (!IsReadyToHarvest) return;
+
+        int baseCoins = 0;
+        if (plantGrowth != null)
+        {
+            baseCoins = plantGrowth.Harvest();
+        }
+
+        // Terapkan multiplier koin dari Powerup Pot (default: 1.0 = normal, 2.0 = 2x koin)
+        float mult = Mathf.Max(1.0f, coinMultiplier);
+        int finalCoins = Mathf.RoundToInt(baseCoins * mult);
+
+        // Tambahkan koin ke CoinManager
+        CoinManager.Instance.AddCoins(finalCoins);
+
+        isPlanted = false;
+        SetHarvestIndicator(false);
+        SetWaterIndicator(false);
+        SetPlantIndicator(false);
+
+        Debug.Log($"[Pot] Memanen tanaman sukses! Base Koin: {baseCoins}, Multiplier Pot: {mult}x -> Mendapatkan {finalCoins} koin.");
+    }
+
+    /// <summary>
+    /// Menerapkan status Powerup baru pada pot ini (misal dari item toko atau upgrade pot).
+    /// </summary>
+    public void ApplyPowerUp(float newCoinMultiplier = 1.0f, float newGrowthSpeedMultiplier = 1.0f)
+    {
+        coinMultiplier = Mathf.Max(1.0f, newCoinMultiplier);
+        growthSpeedMultiplier = Mathf.Max(1.0f, newGrowthSpeedMultiplier);
+
+        UpdatePowerUpVisuals();
+    }
+
+    /// <summary>
+    /// Memperbarui visual indikator / VFX powerup pada pot.
+    /// </summary>
+    public void UpdatePowerUpVisuals()
+    {
+        bool hasPowerUp = coinMultiplier > 1.0f || growthSpeedMultiplier > 1.0f;
+
+        if (powerUpVFX != null)
+        {
+            powerUpVFX.SetActive(hasPowerUp);
+        }
+
+        if (powerUpTextTMP != null)
+        {
+            if (hasPowerUp)
+            {
+                System.Collections.Generic.List<string> labels = new System.Collections.Generic.List<string>();
+                if (coinMultiplier > 1.0f) labels.Add($"{coinMultiplier:0.#}x KOIN");
+                if (growthSpeedMultiplier > 1.0f) labels.Add($"{growthSpeedMultiplier:0.#}x SPEED");
+
+                powerUpTextTMP.text = string.Join(" | ", labels);
+                powerUpTextTMP.gameObject.SetActive(true);
+            }
+            else
+            {
+                powerUpTextTMP.gameObject.SetActive(false);
+            }
         }
     }
 
@@ -178,6 +371,19 @@ public class Pot : MonoBehaviour
     public float GetColliderOffset()
     {
         return wallOffset;
+    }
+
+    /// <summary>
+    /// Mengatur rotasi offset penempatan pot pada grid (dalam sudut Euler X, Y, Z).
+    /// </summary>
+    public void SetWallRotationOffset(Vector3 newOffset)
+    {
+        wallRotationOffset = newOffset;
+    }
+
+    public void SetWallRotationOffset(float x, float y, float z)
+    {
+        wallRotationOffset = new Vector3(x, y, z);
     }
 
     /// <summary>
@@ -240,6 +446,8 @@ public class Pot : MonoBehaviour
         {
             transform.SetParent(gridParent, true);
         }
+
+        isPlacedOnWall = true;
 
         if (_grabbable != null)
         {

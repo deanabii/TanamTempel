@@ -84,6 +84,7 @@ namespace PlayerControllers
 
         void Update()
         {
+
             HandleCursorLock();
             HandleViewToggle();
             HandleCrouch();

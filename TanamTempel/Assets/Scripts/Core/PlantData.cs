@@ -32,6 +32,10 @@ public class PlantData : ScriptableObject
     [Tooltip("Nama jenis tanaman (misal: Tomat, Cabai, Bunga Matahari)")]
     public string plantName = "Tanaman Baru";
 
+    [Header("Hasil Panen")]
+    [Tooltip("Jumlah koin yang didapatkan pemain saat memanen tanaman ini.")]
+    public int coinReward = 10;
+
     [Header("Daftar Tahapan Pertumbuhan (Stages)")]
     [Tooltip("Daftar tahapan pertumbuhan tanaman. Jumlah stage bebas diatur di Inspector. Index terakhir otomatis menjadi stage Siap Panen.")]
     public PlantStage[] stages;

@@ -44,9 +44,12 @@ public class PlantGrowth : MonoBehaviour
     [Tooltip("Timer sisa waktu sebelum tanaman mati karena kekeringan.")]
     public float currentWaterWaitTimer = 0f;
 
-    [Header("Indikator Siram (Prompt Interaksi)")]
-    [Tooltip("Anak objek ikon/teks indikator 'Siram' (muncul saat diarahkan dengan Gayung terisi air).")]
-    public GameObject waterPromptIndicator;
+    [Header("Indikator Status Tanaman (PlantGrowth)")]
+    [Tooltip("Anak objek ikon/teks indikator Status Butuh Air (selalu menyala dari jauh saat tanaman membutuhkan air).")]
+    public GameObject needWateringIndicator;
+
+    [Tooltip("Anak objek ikon/teks indikator Status Siap Panen (selalu menyala dari jauh saat tanaman Siap Panen).")]
+    public GameObject readyHarvestIndicator;
 
     [Header("Bar Timer Kematian")]
     [Tooltip("Objek root visual bar timer kekeringan (aktif selama tanaman butuh disiram).")]
@@ -99,12 +102,43 @@ public class PlantGrowth : MonoBehaviour
             }
             else
             {
-                if (waterPromptIndicator == null) waterPromptIndicator = waterIndicator;
+                if (needWateringIndicator == null) needWateringIndicator = waterIndicator;
+            }
+        }
+
+        // Auto-assign needWateringIndicator jika belum diisi
+        if (needWateringIndicator == null)
+        {
+            SpriteRenderer[] srs = GetComponentsInChildren<SpriteRenderer>(true);
+            foreach (var sr in srs)
+            {
+                string lower = sr.gameObject.name.ToLower();
+                if (sr.gameObject != gameObject && (lower.Contains("need") || lower.Contains("butuh")) && (lower.Contains("water") || lower.Contains("air") || lower.Contains("siram")))
+                {
+                    needWateringIndicator = sr.gameObject;
+                    break;
+                }
+            }
+        }
+
+        // Auto-assign readyHarvestIndicator jika belum diisi
+        if (readyHarvestIndicator == null)
+        {
+            SpriteRenderer[] srs = GetComponentsInChildren<SpriteRenderer>(true);
+            foreach (var sr in srs)
+            {
+                string lower = sr.gameObject.name.ToLower();
+                if (sr.gameObject != gameObject && (lower.Contains("ready") || lower.Contains("siap")))
+                {
+                    readyHarvestIndicator = sr.gameObject;
+                    break;
+                }
             }
         }
 
         SetWaterBarActive(false);
-        SetPromptIndicator(false);
+        if (needWateringIndicator != null) needWateringIndicator.SetActive(false);
+        if (readyHarvestIndicator != null) readyHarvestIndicator.SetActive(false);
 
         // Jika ada data awal di Inspector dan ingin mulai langsung (opsional untuk testing)
         if (currentPlantData != null && currentStage >= 0)
@@ -123,15 +157,30 @@ public class PlantGrowth : MonoBehaviour
         if (_mainCam == null) _mainCam = Camera.main;
         if (_mainCam == null) return;
 
-        // Billboard effect: buat bar timer dan prompt siram selalu menghadap ke kamera
+        // Indikator Status Butuh Air (needWateringIndicator): selalu menyala dari jauh jika tanaman butuh air
+        if (needWateringIndicator != null)
+        {
+            needWateringIndicator.SetActive(needsWater);
+            if (needWateringIndicator.activeSelf)
+            {
+                needWateringIndicator.transform.forward = _mainCam.transform.forward;
+            }
+        }
+
+        // Indikator Status Siap Panen (readyHarvestIndicator): selalu menyala dari jauh jika tanaman Siap Panen
+        if (readyHarvestIndicator != null)
+        {
+            readyHarvestIndicator.SetActive(IsReadyToHarvest);
+            if (readyHarvestIndicator.activeSelf)
+            {
+                readyHarvestIndicator.transform.forward = _mainCam.transform.forward;
+            }
+        }
+
+        // Billboard effect: buat bar timer kekeringan selalu menghadap ke kamera
         if (waterBarRoot != null && waterBarRoot.activeSelf)
         {
             waterBarRoot.transform.forward = _mainCam.transform.forward;
-        }
-
-        if (waterPromptIndicator != null && waterPromptIndicator.activeSelf)
-        {
-            waterPromptIndicator.transform.forward = _mainCam.transform.forward;
         }
     }
 
@@ -157,8 +206,15 @@ public class PlantGrowth : MonoBehaviour
             return;
         }
 
-        // Jika sudah disiram (atau stage tidak butuh air), timer durasi stage berjalan
-        currentStageTimer += Time.deltaTime;
+        // Hitung kecepatan tumbuh berdasarkan multiplier powerup dari Pot (default: 1.0 = normal, 2.0 = 2x lebih cepat)
+        float speedMultiplier = 1.0f;
+        if (_pot != null)
+        {
+            speedMultiplier = Mathf.Max(0.1f, _pot.growthSpeedMultiplier);
+        }
+
+        // Jika sudah disiram (atau stage tidak butuh air), timer durasi stage berjalan sesuai kecepatan
+        currentStageTimer += Time.deltaTime * speedMultiplier;
 
         float stageDuration = stages[currentStage].duration;
         if (currentStageTimer >= stageDuration)
@@ -251,17 +307,20 @@ public class PlantGrowth : MonoBehaviour
     /// Memicu status kebutuhan air, mengaktifkan timer kematian, dan memunculkan bar timer.
     /// Indikator 'Siram' hanya akan menyala saat pemain membidik pot dengan gayung berisi air.
     /// </summary>
+    /// <summary>
+    /// Memicu status kebutuhan air, mengaktifkan timer kematian, dan memunculkan bar timer.
+    /// </summary>
     public void TriggerNeedsWater()
     {
         needsWater = true;
         currentWaterWaitTimer = maxWaterWaitTime;
         UpdateWaterBarVisual();
         SetWaterBarActive(true);
-        SetPromptIndicator(false);
+        if (needWateringIndicator != null) needWateringIndicator.SetActive(true);
     }
 
     /// <summary>
-    /// Menyiram tanaman: mematikan indikator siram & bar timer, lalu melanjutkan perhitungan waktu tumbuh.
+    /// Menyiram tanaman: mematikan indikator status butuh air & bar timer, lalu melanjutkan perhitungan waktu tumbuh.
     /// </summary>
     public void WaterPlant()
     {
@@ -269,7 +328,7 @@ public class PlantGrowth : MonoBehaviour
 
         needsWater = false;
         SetWaterBarActive(false);
-        SetPromptIndicator(false);
+        if (needWateringIndicator != null) needWateringIndicator.SetActive(false);
 
         if (_pot != null)
         {
@@ -289,7 +348,8 @@ public class PlantGrowth : MonoBehaviour
         needsWater = false;
         _isGrowing = false;
         SetWaterBarActive(false);
-        SetPromptIndicator(false);
+        if (needWateringIndicator != null) needWateringIndicator.SetActive(false);
+        if (readyHarvestIndicator != null) readyHarvestIndicator.SetActive(false);
         SetStage(-1);
         currentPlantData = null;
 
@@ -302,8 +362,54 @@ public class PlantGrowth : MonoBehaviour
         if (_pot != null)
         {
             _pot.SetWaterIndicator(false);
+            _pot.SetHarvestIndicator(false);
             _pot.isPlanted = false;
         }
+    }
+
+    /// <summary>
+    /// Memanen tanaman setelah mencapai stage Siap Panen.
+    /// Menghancurkan model visual tanaman, mengembalikan sisa state ke kondisi kosong,
+    /// dan mengembalikan jumlah koin reward dari ScriptableObject.
+    /// </summary>
+    public int Harvest()
+    {
+        int coinsEarned = currentPlantData != null ? currentPlantData.coinReward : 10;
+        string plantName = currentPlantData != null ? currentPlantData.plantName : "Tanaman";
+
+        Debug.Log($"[PlantGrowth] Memanen {plantName}! Mendapatkan {coinsEarned} koin.");
+
+        needsWater = false;
+        _isGrowing = false;
+        SetWaterBarActive(false);
+        if (needWateringIndicator != null) needWateringIndicator.SetActive(false);
+        if (readyHarvestIndicator != null) readyHarvestIndicator.SetActive(false);
+
+        // Hancurkan model 3D visual tanaman saat ini
+        if (_currentStageInstance != null)
+        {
+            Destroy(_currentStageInstance);
+            _currentStageInstance = null;
+        }
+
+        currentStage = -1;
+        currentStageTimer = 0f;
+        currentPlantData = null;
+
+        if (_pot == null)
+        {
+            _pot = GetComponentInParent<Pot>();
+            if (_pot == null) _pot = GetComponent<Pot>();
+        }
+
+        if (_pot != null)
+        {
+            _pot.SetWaterIndicator(false);
+            _pot.SetHarvestIndicator(false);
+            _pot.isPlanted = false;
+        }
+
+        return coinsEarned;
     }
 
     /// <summary>
@@ -325,13 +431,13 @@ public class PlantGrowth : MonoBehaviour
     }
 
     /// <summary>
-    /// Menampilkan atau menyembunyikan ikon/tulisan indikator 'Siram' (prompt interaksi).
+    /// Menampilkan atau menyembunyikan ikon/tulisan indikator status butuh air.
     /// </summary>
     public void SetPromptIndicator(bool show)
     {
-        if (waterPromptIndicator != null)
+        if (needWateringIndicator != null)
         {
-            waterPromptIndicator.SetActive(show && needsWater);
+            needWateringIndicator.SetActive(show && needsWater);
         }
     }
 

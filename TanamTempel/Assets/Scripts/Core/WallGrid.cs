@@ -9,6 +9,9 @@ public class WallGrid : MonoBehaviour
     [Tooltip("Ukuran sel/kotak grid. Jika 0, posisi pot mengikuti pandangan secara halus. Jika > 0, otomatis snap rapi ke grid.")]
     public float cellSize = 0.5f;
 
+    [Tooltip("Rotasi offset tambahan khusus untuk permukaan grid ini (Euler Angles X, Y, Z).")]
+    public Vector3 gridRotationOffset = Vector3.zero;
+
     /// <summary>
     /// Menghitung posisi penempatan pada grid, didorong ke luar permukaan sesuai ketebalan Collider pot.
     /// </summary>

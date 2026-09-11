@@ -85,6 +85,13 @@ public class Grabbable : MonoBehaviour
         transform.localPosition = grabPositionOffset;
         transform.localRotation = Quaternion.Euler(grabRotation);
         transform.localScale = _originalLocalScale;
+
+        // Jika objek adalah dekorasi, tandai belum diletakkan (isPlaced = false saat dipegang)
+        DecorationItem dec = GetComponent<DecorationItem>();
+        if (dec != null)
+        {
+            dec.OnGrabbed();
+        }
     }
 
     public void Drop()
@@ -97,6 +104,13 @@ public class Grabbable : MonoBehaviour
         {
             _rb.isKinematic = false;
             _rb.detectCollisions = true;
+        }
+
+        // Jika objek adalah dekorasi, tandai sudah diletakkan (isPlaced = true saat dilepas)
+        DecorationItem dec = GetComponent<DecorationItem>();
+        if (dec != null)
+        {
+            dec.OnDropped();
         }
     }
 
