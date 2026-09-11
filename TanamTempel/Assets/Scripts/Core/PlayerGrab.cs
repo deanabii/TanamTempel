@@ -145,6 +145,7 @@ public class PlayerGrab : MonoBehaviour
             {
                 _heldItem.Drop();
                 _heldItem = null;
+                AudioGame.Instance?.PlayDrop();
             }
             return;
         }
@@ -164,6 +165,7 @@ public class PlayerGrab : MonoBehaviour
                 _heldItem = _currentTarget;
                 _heldItem.Grab(handPoint);
                 _currentTarget = null;
+                AudioGame.Instance?.PlayGrab();
 
                 Pot grabbedPot = _heldItem.GetComponent<Pot>();
                 if (grabbedPot != null)
@@ -356,6 +358,7 @@ public class PlayerGrab : MonoBehaviour
                 if (gayung != null)
                 {
                     gayung.Refill();
+                    AudioGame.Instance?.PlayRefillWater();
                 }
                 return;
             }
@@ -372,7 +375,12 @@ public class PlayerGrab : MonoBehaviour
                     if (gayung.UseWater())
                     {
                         potToWater.plantGrowth.WaterPlant();
+                        AudioGame.Instance?.PlayWater();
                     }
+                }
+                else
+                {
+                    AudioGame.Instance?.PlayError();
                 }
                 return;
             }
@@ -381,6 +389,7 @@ public class PlayerGrab : MonoBehaviour
             if (lookedAtPotNeedsWater != null)
             {
                 Debug.Log("[PlayerGrab] Gayung kosong! Isi air di Tong Air terlebih dahulu.");
+                AudioGame.Instance?.PlayError();
                 return;
             }
 
@@ -388,6 +397,7 @@ public class PlayerGrab : MonoBehaviour
             ClearWateringTarget();
             _heldItem.Drop();
             _heldItem = null;
+            AudioGame.Instance?.PlayDrop();
         }
     }
 
@@ -451,6 +461,7 @@ public class PlayerGrab : MonoBehaviour
             _currentHoveredPotForHarvesting = null;
 
             potToHarvest.Harvest();
+            AudioGame.Instance?.PlayHarvest();
             return true;
         }
 
@@ -516,6 +527,7 @@ public class PlayerGrab : MonoBehaviour
                 // Ambil data tanaman dari biji yang sedang dipegang
                 PlantData plantData = biji != null ? biji.plantData : null;
                 potToPlant.Plant(plantData);
+                AudioGame.Instance?.PlayPlant();
 
                 // Hilangkan biji yang dipegang
                 if (biji != null)
@@ -597,6 +609,7 @@ public class PlayerGrab : MonoBehaviour
                 {
                     pot.Place(hitCollider.transform, placePos, placeRot);
                     _heldItem = null;
+                    AudioGame.Instance?.PlayPlacePot();
                     return;
                 }
             }
@@ -612,6 +625,7 @@ public class PlayerGrab : MonoBehaviour
             {
                 _heldItem.Drop();
                 _heldItem = null;
+                AudioGame.Instance?.PlayDrop();
             }
         }
     }

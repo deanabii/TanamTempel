@@ -191,6 +191,8 @@ public class SettingsMenuUI : MonoBehaviour
             rebindModalPanel.SetActive(true);
         }
 
+        AudioGame.Instance?.PlayButtonClick();
+
         KeyBindingManager.Instance.StartRebind(action, (success, newKeyName) =>
         {
             // Panel modal otomatis menghilang setelah 1 tombol ditekan (atau dibatalkan dengan Escape)
@@ -198,6 +200,8 @@ public class SettingsMenuUI : MonoBehaviour
             {
                 rebindModalPanel.SetActive(false);
             }
+
+            AudioGame.Instance?.PlayButtonClick();
 
             // Perbarui tampilan label teks key sekarang
             UpdateUI();
@@ -209,6 +213,8 @@ public class SettingsMenuUI : MonoBehaviour
     /// </summary>
     public void CancelRebind()
     {
+        AudioGame.Instance?.PlayButtonClick();
+
         if (KeyBindingManager.Instance != null && KeyBindingManager.Instance.IsRebinding)
         {
             KeyBindingManager.Instance.CancelRebind();
@@ -228,6 +234,7 @@ public class SettingsMenuUI : MonoBehaviour
     public void OpenSettings()
     {
         IsSettingsOpen = true;
+        AudioGame.Instance?.PlayButtonClick();
 
         if (rebindModalPanel != null)
         {
@@ -255,6 +262,7 @@ public class SettingsMenuUI : MonoBehaviour
     public void CloseSettings()
     {
         IsSettingsOpen = false;
+        AudioGame.Instance?.PlayButtonClick();
 
         CancelRebind();
 
@@ -275,6 +283,8 @@ public class SettingsMenuUI : MonoBehaviour
 
     private void OnResetClicked()
     {
+        AudioGame.Instance?.PlayButtonClick();
+
         if (KeyBindingManager.Instance != null)
         {
             KeyBindingManager.Instance.ResetToDefault();

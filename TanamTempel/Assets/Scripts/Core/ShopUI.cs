@@ -169,6 +169,7 @@ public class ShopUI : MonoBehaviour
     public void CloseShop()
     {
         IsShopOpen = false;
+        AudioGame.Instance?.PlayButtonClick();
 
         if (shopPanel != null)
         {
@@ -221,6 +222,7 @@ public class ShopUI : MonoBehaviour
     /// </summary>
     public void SelectTanamTab()
     {
+        AudioGame.Instance?.PlayButtonClick();
         tanamTabPanel.SetActive(true);
         dekorasiTabPanel.SetActive(false);
     }
@@ -230,6 +232,7 @@ public class ShopUI : MonoBehaviour
     /// </summary>
     public void SelectDekorasiTab()
     {
+        AudioGame.Instance?.PlayButtonClick();
         tanamTabPanel.SetActive(false);
         dekorasiTabPanel.SetActive(true);
     }
@@ -351,6 +354,7 @@ public class ShopUI : MonoBehaviour
         // Cek apakah koin mencukupi via CoinManager
         if (CoinManager.Instance.UseCoins(item.price))
         {
+            AudioGame.Instance?.PlayShopBuy();
             Debug.Log($"[ShopUI] Berhasil membeli {item.itemName} (Kategori: {item.category}) seharga {item.price} koin!");
 
             // Tentukan posisi spawn item di dunia 3D
@@ -415,6 +419,7 @@ public class ShopUI : MonoBehaviour
         }
         else
         {
+            AudioGame.Instance?.PlayError();
             Debug.LogWarning($"[ShopUI] Koin tidak mencukupi untuk membeli {item.itemName}!");
         }
     }

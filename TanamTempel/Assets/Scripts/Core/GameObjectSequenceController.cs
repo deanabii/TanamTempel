@@ -176,6 +176,8 @@ public class GameObjectSequenceController : MonoBehaviour
         // 1. Matikan objek yang sedang aktif sekarang
         DeactivateCurrentObject();
 
+        AudioGame.Instance?.PlayButtonClick();
+
         // 2. Geser ke indeks berikutnya
         _currentIndex++;
 
@@ -206,6 +208,7 @@ public class GameObjectSequenceController : MonoBehaviour
         if (!_isSequenceActive || _currentIndex <= 0) return;
 
         DeactivateCurrentObject();
+        AudioGame.Instance?.PlayButtonClick();
 
         _currentIndex--;
         while (_currentIndex >= 0 && targetObjects[_currentIndex] == null)
@@ -225,6 +228,7 @@ public class GameObjectSequenceController : MonoBehaviour
     /// </summary>
     public void CloseAll()
     {
+        AudioGame.Instance?.PlayButtonClick();
         FinishSequence();
     }
 

@@ -30,6 +30,7 @@ public class MainMenuManager : MonoBehaviour
     /// </summary>
     public void LoadMainScene(string sceneName)
     {
+        AudioGame.Instance?.PlayButtonClick();
         SceneManager.LoadScene(sceneName);
     }
 
@@ -38,6 +39,7 @@ public class MainMenuManager : MonoBehaviour
     /// </summary>
     public void ShowCreditPanel()
     {
+        AudioGame.Instance?.PlayButtonClick();
         if (creditPanel != null)
         {
             creditPanel.SetActive(true);
@@ -53,6 +55,7 @@ public class MainMenuManager : MonoBehaviour
     /// </summary>
     public void HideCreditPanel()
     {
+        AudioGame.Instance?.PlayButtonClick();
         if (creditPanel != null)
         {
             creditPanel.SetActive(false);
@@ -64,6 +67,7 @@ public class MainMenuManager : MonoBehaviour
     /// </summary>
     public void ShowSettingsPanel()
     {
+        AudioGame.Instance?.PlayButtonClick();
         if (settingsPanel != null)
         {
             settingsPanel.SetActive(true);
@@ -79,6 +83,7 @@ public class MainMenuManager : MonoBehaviour
     /// </summary>
     public void HideSettingsPanel()
     {
+        AudioGame.Instance?.PlayButtonClick();
         if (settingsPanel != null)
         {
             settingsPanel.SetActive(false);
@@ -94,11 +99,11 @@ public class MainMenuManager : MonoBehaviour
     /// </summary>
     public void QuitGame()
     {
+        AudioGame.Instance?.PlayButtonClick();
         // Pesan ini hanya akan muncul di console Unity Editor untuk simulasi
         Debug.Log("Keluar dari Game!"); 
         
         // Perintah ini akan menutup aplikasi saat sudah di-build
         Application.Quit();
     }
-
 }

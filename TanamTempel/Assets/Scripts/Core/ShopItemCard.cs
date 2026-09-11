@@ -154,6 +154,7 @@ public class ShopItemCard : MonoBehaviour
 
     private void OnBuyButtonClicked()
     {
+        AudioGame.Instance?.PlayButtonClick();
         if (_currentItemData != null && _onBuyAction != null)
         {
             _onBuyAction.Invoke(_currentItemData);

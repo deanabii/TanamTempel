@@ -157,6 +157,7 @@ public class ShopArea : MonoBehaviour
     {
         if (shopUI != null)
         {
+            AudioGame.Instance?.PlayShopOpen();
             shopUI.OpenShop(this);
         }
         else
