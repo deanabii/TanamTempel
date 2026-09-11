@@ -28,12 +28,30 @@ public class PlayerGrab : MonoBehaviour
     public Color gizmoBoxColor = Color.yellow;
     public Color gizmoHitColor = Color.green;
 
+    public static PlayerGrab Instance { get; private set; }
+
+    /// <summary>
+    /// Apakah pemain sedang mengarahkan pandangan / siap berinteraksi dengan objek dunia
+    /// (seperti mengambil barang, menanam biji, menyiram, mengisi gayung, atau panen).
+    /// </summary>
+    public bool HasInteractionTarget =>
+        _currentTarget != null ||
+        _currentHoveredPotForPlanting != null ||
+        _currentHoveredTongAir != null ||
+        _currentHoveredPotForWatering != null ||
+        _currentHoveredPotForHarvesting != null;
+
     private Grabbable _currentTarget;
     private Grabbable _heldItem;
     private Pot _currentHoveredPotForPlanting;
     private TongAir _currentHoveredTongAir;
     private Pot _currentHoveredPotForWatering;
     private Pot _currentHoveredPotForHarvesting;
+
+    private void Awake()
+    {
+        Instance = this;
+    }
 
     private void Start()
     {
@@ -627,6 +645,20 @@ public class PlayerGrab : MonoBehaviour
 
     private bool IsInputTriggered()
     {
+        // 1. Cek sistem KeyBindingManager jika ada
+        if (KeyBindingManager.Instance != null)
+        {
+            if (KeyBindingManager.Instance.IsInteractPressed()) return true;
+#if ENABLE_INPUT_SYSTEM
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame) return true;
+            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame) return true;
+#else
+            if (Input.GetMouseButtonDown(0)) return true;
+#endif
+            return false;
+        }
+
+        // 2. Fallback jika KeyBindingManager belum ada
 #if ENABLE_INPUT_SYSTEM
         if (Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame) return true;
         if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame) return true;

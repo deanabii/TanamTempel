@@ -2,13 +2,14 @@ using UnityEngine;
 
 /// <summary>
 /// Komponen untuk area Toko / Meja Penjualan.
-/// Mendeteksi keberadaan pemain di area toko, menampilkan indikator "Buka Toko / Tekan E",
+/// Mendeteksi keberadaan pemain di area toko, menampilkan indikator buka toko,
 /// serta menyediakan titik spawnPoint untuk menempatkan item yang dibeli.
+/// Tombol pembuka toko dapat diubah bebas melalui Inspector (default: B, atau key lain).
 /// </summary>
 public class ShopArea : MonoBehaviour
 {
     [Header("Referensi Toko & Indicator")]
-    [Tooltip("Anak objek ikon/teks indikator (misal: 'Tekan E untuk Membuka Toko').")]
+    [Tooltip("Anak objek ikon/teks indikator (misal: 'Tekan [B] untuk Membuka Toko').")]
     public GameObject shopIndicator;
 
     [Tooltip("Titik Spawn Point tempat objek yang dibeli akan dimunculkan di dunia game.")]
@@ -16,6 +17,20 @@ public class ShopArea : MonoBehaviour
 
     [Tooltip("Referensi ke komponen ShopUI di Canvas UI (jika kosong, otomatis mencari di scene).")]
     public ShopUI shopUI;
+
+    [Header("Pengaturan Tombol Buka Toko (Terintegrasi dengan Interaksi)")]
+#if ENABLE_INPUT_SYSTEM
+    [Tooltip("Tombol keyboard untuk membuka toko (default: E, terintegrasi dengan tombol interaksi).")]
+    public UnityEngine.InputSystem.Key shopKey = UnityEngine.InputSystem.Key.E;
+#endif
+    [Tooltip("Tombol keyboard legacy/fallback jika New Input System tidak aktif (default: E).")]
+    public KeyCode legacyShopKey = KeyCode.E;
+
+    [Tooltip("Apakah klik kiri mouse juga bisa digunakan untuk membuka toko saat berada di area toko.")]
+    public bool allowMouseClick = false;
+
+    [Tooltip("Apakah toko juga bisa dibuka dari mana saja dengan menekan tombol ini (tanpa harus berdiri di area toko).")]
+    public bool allowGlobalAccess = false;
 
     [Header("Pengaturan Deteksi Player")]
     [Tooltip("Jarak maksimal interaksi pemain jika menggunakan sistem Look/Raycast.")]
@@ -56,16 +71,25 @@ public class ShopArea : MonoBehaviour
             }
         }
 
+        UpdateIndicatorText();
         SetIndicator(false);
     }
 
     private void Start()
     {
+        UpdateIndicatorText();
         SetIndicator(false);
+    }
+
+    private void OnEnable()
+    {
+        KeyBindingManager.OnKeyBindingsChanged += UpdateIndicatorText;
+        UpdateIndicatorText();
     }
 
     private void OnDisable()
     {
+        KeyBindingManager.OnKeyBindingsChanged -= UpdateIndicatorText;
         SetIndicator(false);
     }
 
@@ -79,12 +103,19 @@ public class ShopArea : MonoBehaviour
             shopIndicator.transform.forward = _mainCam.transform.forward;
         }
 
-        // Jika toko sudah terbuka, jangan panggil OpenShop lagi saat mouse diklik
+        // Jika toko sudah terbuka, jangan panggil OpenShop lagi
         if (ShopUI.IsShopOpen) return;
 
-        // Jika player di dalam trigger area dan menekan tombol interaksi E / Tap
-        if (useTriggerCollider && _isPlayerInArea && IsInputPressed())
+        // Jika player di dalam trigger area (atau allowGlobalAccess aktif) dan menekan tombol toko
+        bool canOpen = (useTriggerCollider && _isPlayerInArea) || allowGlobalAccess;
+        if (canOpen && IsInputPressed())
         {
+            // Jika pemain sedang membidik objek interaktif lain (misal: mengambil item dari meja toko/tanaman), dahulukan grab/interact
+            if (PlayerGrab.Instance != null && PlayerGrab.Instance.HasInteractionTarget)
+            {
+                return;
+            }
+
             OpenShop();
         }
     }
@@ -94,6 +125,7 @@ public class ShopArea : MonoBehaviour
         if (useTriggerCollider && (other.CompareTag("Player") || other.GetComponent<CharacterController>() != null || other.GetComponentInParent<PlayerGrab>() != null))
         {
             _isPlayerInArea = true;
+            UpdateIndicatorText();
             SetIndicator(true);
         }
     }
@@ -135,12 +167,82 @@ public class ShopArea : MonoBehaviour
 
     private bool IsInputPressed()
     {
+        // 1. Cek sistem KeyBindingManager jika ada
+        if (KeyBindingManager.Instance != null)
+        {
+            if (KeyBindingManager.Instance.IsShopPressed()) return true;
+            if (allowMouseClick)
+            {
 #if ENABLE_INPUT_SYSTEM
-        if (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.eKey.wasPressedThisFrame) return true;
-        if (UnityEngine.InputSystem.Mouse.current != null && UnityEngine.InputSystem.Mouse.current.leftButton.wasPressedThisFrame) return true;
+                if (UnityEngine.InputSystem.Mouse.current != null && UnityEngine.InputSystem.Mouse.current.leftButton.wasPressedThisFrame) return true;
 #else
-        if (Input.GetKeyDown(KeyCode.E) || Input.GetMouseButtonDown(0)) return true;
+                if (Input.GetMouseButtonDown(0)) return true;
+#endif
+            }
+            return false;
+        }
+
+        // 2. Fallback jika KeyBindingManager belum ada
+#if ENABLE_INPUT_SYSTEM
+        if (UnityEngine.InputSystem.Keyboard.current != null)
+        {
+            var keyControl = UnityEngine.InputSystem.Keyboard.current[shopKey];
+            if (keyControl != null && keyControl.wasPressedThisFrame) return true;
+        }
+
+        if (allowMouseClick && UnityEngine.InputSystem.Mouse.current != null && UnityEngine.InputSystem.Mouse.current.leftButton.wasPressedThisFrame)
+        {
+            return true;
+        }
+#else
+        if (Input.GetKeyDown(legacyShopKey)) return true;
+        if (allowMouseClick && Input.GetMouseButtonDown(0)) return true;
 #endif
         return false;
+    }
+
+    /// <summary>
+    /// Memperbarui teks indikator jika anak objek memiliki komponen TextMeshPro atau Text.
+    /// Mengganti karakter di dalam tanda kurung siku [...] dengan nama tombol saat ini.
+    /// </summary>
+    public void UpdateIndicatorText()
+    {
+        if (shopIndicator == null) return;
+
+        string keyName = KeyBindingManager.Instance != null
+            ? KeyBindingManager.Instance.GetKeyName(KeyAction.InteractAndShop)
+            :
+#if ENABLE_INPUT_SYSTEM
+            shopKey.ToString();
+#else
+            legacyShopKey.ToString();
+#endif
+
+        TMPro.TMP_Text tmp = shopIndicator.GetComponentInChildren<TMPro.TMP_Text>(true);
+        if (tmp != null)
+        {
+            if (tmp.text.Contains("[") && tmp.text.Contains("]"))
+            {
+                int start = tmp.text.IndexOf('[');
+                int end = tmp.text.IndexOf(']');
+                if (end > start)
+                {
+                    tmp.text = tmp.text.Substring(0, start + 1) + keyName + tmp.text.Substring(end);
+                }
+            }
+        }
+        else
+        {
+            UnityEngine.UI.Text uiText = shopIndicator.GetComponentInChildren<UnityEngine.UI.Text>(true);
+            if (uiText != null && uiText.text.Contains("[") && uiText.text.Contains("]"))
+            {
+                int start = uiText.text.IndexOf('[');
+                int end = uiText.text.IndexOf(']');
+                if (end > start)
+                {
+                    uiText.text = uiText.text.Substring(0, start + 1) + keyName + uiText.text.Substring(end);
+                }
+            }
+        }
     }
 }
