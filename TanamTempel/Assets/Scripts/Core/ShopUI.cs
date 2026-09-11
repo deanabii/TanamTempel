@@ -38,6 +38,17 @@ public class ShopUI : MonoBehaviour
     [Tooltip("Daftar aset ScriptableObject ShopItemData yang akan dijual di Toko.")]
     public List<ShopItemData> availableItems = new List<ShopItemData>();
 
+    [Header("Shortcut Global (Opsional)")]
+    [Tooltip("Apakah toko bisa dibuka/ditutup dari mana saja dengan tombol pintas keyboard.")]
+    public bool enableGlobalHotkey = false;
+
+#if ENABLE_INPUT_SYSTEM
+    [Tooltip("Tombol shortcut global untuk membuka/menutup toko (misal: B).")]
+    public UnityEngine.InputSystem.Key globalShopKey = UnityEngine.InputSystem.Key.B;
+#endif
+    [Tooltip("Tombol shortcut global legacy (default: B).")]
+    public KeyCode legacyGlobalShopKey = KeyCode.B;
+
     private ShopArea _currentShopArea;
 
     private void Awake()
@@ -63,12 +74,67 @@ public class ShopUI : MonoBehaviour
             // Tahan dan nolkan input pergerakan keyboard & rotasi kamera mouse
             DisablePlayerInputs();
 
-            // Tutup toko jika menekan tombol Escape saat toko sedang terbuka
-            if (Input.GetKeyDown(KeyCode.Escape))
+            // Tutup toko jika menekan tombol Escape atau tombol toko saat toko sedang terbuka
+            if (IsCloseInputPressed())
             {
                 CloseShop();
             }
+            return;
         }
+
+        // Jika fitur shortcut global diaktifkan pada ShopUI
+        if (enableGlobalHotkey && IsGlobalShopKeyPressed())
+        {
+            OpenShop();
+        }
+    }
+
+    private bool IsCloseInputPressed()
+    {
+        if (KeyBindingManager.Instance != null)
+        {
+            if (KeyBindingManager.Instance.IsMenuPressed() || KeyBindingManager.Instance.IsShopPressed())
+            {
+                return true;
+            }
+        }
+
+#if ENABLE_INPUT_SYSTEM
+        if (UnityEngine.InputSystem.Keyboard.current != null)
+        {
+            if (UnityEngine.InputSystem.Keyboard.current.escapeKey.wasPressedThisFrame) return true;
+
+            if (_currentShopArea != null)
+            {
+                var shopKeyControl = UnityEngine.InputSystem.Keyboard.current[_currentShopArea.shopKey];
+                if (shopKeyControl != null && shopKeyControl.wasPressedThisFrame) return true;
+            }
+            else if (enableGlobalHotkey)
+            {
+                var globalKeyControl = UnityEngine.InputSystem.Keyboard.current[globalShopKey];
+                if (globalKeyControl != null && globalKeyControl.wasPressedThisFrame) return true;
+            }
+        }
+#else
+        if (Input.GetKeyDown(KeyCode.Escape)) return true;
+        if (_currentShopArea != null && Input.GetKeyDown(_currentShopArea.legacyShopKey)) return true;
+        if (enableGlobalHotkey && Input.GetKeyDown(legacyGlobalShopKey)) return true;
+#endif
+        return false;
+    }
+
+    private bool IsGlobalShopKeyPressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        if (UnityEngine.InputSystem.Keyboard.current != null)
+        {
+            var globalKeyControl = UnityEngine.InputSystem.Keyboard.current[globalShopKey];
+            if (globalKeyControl != null && globalKeyControl.wasPressedThisFrame) return true;
+        }
+#else
+        if (Input.GetKeyDown(legacyGlobalShopKey)) return true;
+#endif
+        return false;
     }
 
     /// <summary>

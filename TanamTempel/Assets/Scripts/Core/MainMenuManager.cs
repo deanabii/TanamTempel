@@ -7,12 +7,20 @@ public class MainMenuManager : MonoBehaviour
     [Tooltip("Masukkan GameObject Panel Credit ke sini")]
     public GameObject creditPanel;
 
+    [Tooltip("Masukkan GameObject Panel Pengaturan / Settings ke sini (opsional)")]
+    public GameObject settingsPanel;
+
     private void Start()
     {
-        // Memastikan panel credit tidak aktif saat scene pertama kali dimuat
+        // Memastikan panel credit & settings tidak aktif saat scene pertama kali dimuat
         if (creditPanel != null)
         {
             creditPanel.SetActive(false);
+        }
+
+        if (settingsPanel != null)
+        {
+            settingsPanel.SetActive(false);
         }
     }
 
@@ -48,6 +56,36 @@ public class MainMenuManager : MonoBehaviour
         if (creditPanel != null)
         {
             creditPanel.SetActive(false);
+        }
+    }
+
+    /// <summary>
+    /// Dipanggil saat tombol PENGATURAN / SETTINGS ditekan.
+    /// </summary>
+    public void ShowSettingsPanel()
+    {
+        if (settingsPanel != null)
+        {
+            settingsPanel.SetActive(true);
+        }
+        else if (SettingsMenuUI.Instance != null)
+        {
+            SettingsMenuUI.Instance.OpenSettings();
+        }
+    }
+
+    /// <summary>
+    /// Menutup panel pengaturan di Main Menu.
+    /// </summary>
+    public void HideSettingsPanel()
+    {
+        if (settingsPanel != null)
+        {
+            settingsPanel.SetActive(false);
+        }
+        else if (SettingsMenuUI.Instance != null)
+        {
+            SettingsMenuUI.Instance.CloseSettings();
         }
     }
 
